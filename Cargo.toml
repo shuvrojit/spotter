@@ -1,0 +1,27 @@
+[package]
+name = "spotter"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "spotter"
+path = "src/main.rs"
+
+[[bin]]
+name = "spotlight-l"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+dirs = "5.0"
+gtk = { package = "gtk4", version = "0.8", features = ["v4_10"] }
+open = "5.3"
+rayon = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+walkdir = "2.5"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"
