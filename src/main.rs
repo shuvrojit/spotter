@@ -389,6 +389,7 @@ enum ItemKind {
     Command,
     File,
     Directory,
+    WebSearch,
 }
 
 #[derive(Clone, Debug)]
@@ -449,7 +450,7 @@ fn build_ui(app: &Application) {
     root.set_widget_name("shell");
 
     let input = SearchEntry::builder()
-        .placeholder_text("Search apps, commands, and files")
+        .placeholder_text("Search apps, commands, files, and the web")
         .hexpand(true)
         .build();
     input.set_widget_name("search");
@@ -752,10 +753,12 @@ fn search(index: &SharedIndex, query: &str, max_results: usize) -> Vec<SearchRes
         Err(_) => return Vec::new(),
     };
 
+    let terms: Vec<&str> = query.split_whitespace().collect();
+
     let mut results: Vec<_> = items
         .par_iter()
         .filter_map(|item| {
-            fuzzy_score(&item.tokens, &query).map(|score| SearchResult {
+            match_score(&item.tokens, &query, &terms).map(|score| SearchResult {
                 item: item.clone(),
                 score: score + kind_boost(&item.kind),
             })
@@ -769,35 +772,65 @@ fn search(index: &SharedIndex, query: &str, max_results: usize) -> Vec<SearchRes
             .then_with(|| a.item.title.cmp(&b.item.title))
     });
     results.truncate(max_results);
+
+    if results.is_empty() {
+        results.push(SearchResult {
+            item: web_search_item(&query),
+            score: 0,
+        });
+    }
+
     results
 }
 
-fn fuzzy_score(haystack: &str, needle: &str) -> Option<i64> {
-    if haystack.contains(needle) {
-        return Some(10_000 - haystack.find(needle).unwrap_or_default() as i64);
+fn web_search_item(query: &str) -> SearchItem {
+    SearchItem {
+        title: format!("Search Google for \"{query}\""),
+        subtitle: "Open in default browser".to_string(),
+        target: format!(
+            "https://www.google.com/search?q={}",
+            percent_encode(query)
+        ),
+        kind: ItemKind::WebSearch,
+        tokens: query.to_string(),
+    }
+}
+
+fn percent_encode(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len() * 3);
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char)
+            }
+            b' ' => encoded.push('+'),
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+// Every query term must appear as a contiguous substring; scattered
+// character matches are treated as no match so unrelated queries fall
+// through to the web-search row.
+fn match_score(tokens: &str, query: &str, terms: &[&str]) -> Option<i64> {
+    let mut score = 0_i64;
+
+    for term in terms {
+        let idx = tokens.find(term)?;
+        score += 1_000 - (idx as i64).min(900);
+        let at_word_start = tokens[..idx]
+            .chars()
+            .next_back()
+            .map(|ch| !ch.is_alphanumeric())
+            .unwrap_or(true);
+        if at_word_start {
+            score += 500;
+        }
     }
 
-    let mut score = 0_i64;
-    let mut last_match = None;
-    let mut chars = haystack.char_indices();
-
-    for needle_char in needle.chars() {
-        let mut matched = None;
-        for (idx, candidate) in chars.by_ref() {
-            if candidate == needle_char {
-                matched = Some(idx);
-                break;
-            }
-        }
-
-        let idx = matched?;
-        score += 100;
-        if let Some(last) = last_match {
-            score -= (idx as i64 - last as i64).abs().min(40);
-        } else {
-            score -= (idx as i64).min(60);
-        }
-        last_match = Some(idx);
+    if terms.len() > 1 && tokens.contains(query) {
+        score += 1_000;
     }
 
     Some(score)
@@ -809,6 +842,7 @@ fn kind_boost(kind: &ItemKind) -> i64 {
         ItemKind::Command => 1_500,
         ItemKind::Directory => 800,
         ItemKind::File => 0,
+        ItemKind::WebSearch => 0,
     }
 }
 
@@ -1038,6 +1072,7 @@ fn render_results(
                 ItemKind::Command => ">",
                 ItemKind::File => "□",
                 ItemKind::Directory => "▣",
+                ItemKind::WebSearch => "⌕",
             };
             list.append(&result_row(
                 &result.item.title,
@@ -1117,11 +1152,92 @@ fn launch(item: &SearchItem) -> Result<()> {
         ItemKind::Command => {
             Command::new(&item.target).spawn()?;
         }
-        ItemKind::File | ItemKind::Directory => {
+        ItemKind::File | ItemKind::Directory | ItemKind::WebSearch => {
             open::that_detached(&item.target)?;
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn score(tokens: &str, query: &str) -> Option<i64> {
+        let terms: Vec<&str> = query.split_whitespace().collect();
+        match_score(tokens, query, &terms)
+    }
+
+    #[test]
+    fn prefix_matches() {
+        assert!(score("firefox web browser", "fir").is_some());
+    }
+
+    #[test]
+    fn multi_word_matches_in_any_order() {
+        assert!(score("firefox web browser", "browser fire").is_some());
+    }
+
+    #[test]
+    fn word_start_ranks_above_mid_word() {
+        let start = score("firefox web browser", "fir").unwrap();
+        let mid = score("aafirefox web browser", "fir").unwrap();
+        assert!(start > mid, "start {start} mid {mid}");
+    }
+
+    #[test]
+    fn scattered_letters_are_no_match() {
+        assert!(score("gnu image manipulation program", "gimp").is_none());
+        assert!(score(
+            "how to use graphic design to sell things and explain things",
+            "how to cook rice"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn missing_term_is_no_match() {
+        assert!(score("readme.txt /home/user/readme.txt", "readme zzz").is_none());
+    }
+
+    #[test]
+    fn gibberish_query_falls_back_to_web_search() {
+        let config = Arc::new(Config::default());
+        let index: SharedIndex = Arc::new(RwLock::new(SearchIndex::default()));
+        let mut items = Vec::new();
+        items.extend(read_desktop_apps());
+        items.extend(read_path_commands());
+        items.extend(read_filesystem_items(&config));
+        index.write().unwrap().items = items;
+
+        let results = search(&index, "ls", 9);
+        assert!(
+            !matches!(results[0].item.kind, ItemKind::WebSearch),
+            "real query `ls` should match indexed items, got web fallback"
+        );
+
+        for query in ["weather in tokyo", "how to cook rice", "asdkjqwe"] {
+            let results = search(&index, query, 9);
+            eprintln!("query `{query}`:");
+            for r in &results {
+                eprintln!("  {:?} score={} {}", r.item.kind, r.score, r.item.title);
+            }
+            assert!(
+                matches!(results[0].item.kind, ItemKind::WebSearch),
+                "query `{query}` did not fall back to web search"
+            );
+        }
+    }
+
+    #[test]
+    fn web_search_item_encodes_query() {
+        let item = web_search_item("weather in tokyo?");
+        assert_eq!(
+            item.target,
+            "https://www.google.com/search?q=weather+in+tokyo%3F"
+        );
+        assert!(matches!(item.kind, ItemKind::WebSearch));
+    }
 }
 
 fn build_style(ui: &UiConfig) -> String {
