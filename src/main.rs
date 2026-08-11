@@ -15,6 +15,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -69,6 +70,14 @@ index_dirs = [
   "Videos",
 ]
 
+[ai]
+# OpenAI-compatible endpoint used when a query starts with `/`.
+# Works with OpenAI, Ollama (http://localhost:11434/v1), llama.cpp, etc.
+base_url = "https://api.openai.com/v1"
+# Leave empty to use the OPENAI_API_KEY environment variable instead.
+api_key = ""
+model = "gpt-4o-mini"
+
 [ui]
 # GTK4/Wayland compositors usually control exact window position.
 # Spotter defaults to a slightly inset top-left preference.
@@ -120,6 +129,8 @@ struct Config {
     #[serde(default = "default_index_dirs")]
     index_dirs: Vec<String>,
     #[serde(default)]
+    ai: AiConfig,
+    #[serde(default)]
     ui: UiConfig,
 }
 
@@ -132,9 +143,59 @@ impl Default for Config {
             index_depth: default_index_depth(),
             include_hidden: false,
             index_dirs: default_index_dirs(),
+            ai: AiConfig::default(),
             ui: UiConfig::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct AiConfig {
+    #[serde(default = "default_ai_base_url")]
+    base_url: String,
+    #[serde(default)]
+    api_key: String,
+    #[serde(default = "default_ai_model")]
+    model: String,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_ai_base_url(),
+            api_key: String::new(),
+            model: default_ai_model(),
+        }
+    }
+}
+
+impl AiConfig {
+    fn sanitize(&mut self) {
+        if self.base_url.trim().is_empty() {
+            self.base_url = default_ai_base_url();
+        }
+        self.base_url = self.base_url.trim().trim_end_matches('/').to_string();
+        if self.model.trim().is_empty() {
+            self.model = default_ai_model();
+        }
+    }
+
+    fn resolve_api_key(&self) -> Option<String> {
+        if !self.api_key.trim().is_empty() {
+            return Some(self.api_key.trim().to_string());
+        }
+        env::var("OPENAI_API_KEY")
+            .ok()
+            .filter(|key| !key.trim().is_empty())
+    }
+}
+
+fn default_ai_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
+fn default_ai_model() -> String {
+    "gpt-4o-mini".to_string()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -390,6 +451,7 @@ enum ItemKind {
     File,
     Directory,
     WebSearch,
+    AiPrompt,
 }
 
 #[derive(Clone, Debug)]
@@ -450,7 +512,7 @@ fn build_ui(app: &Application) {
     root.set_widget_name("shell");
 
     let input = SearchEntry::builder()
-        .placeholder_text("Search apps, commands, files, and the web")
+        .placeholder_text("Search apps, files, and the web — / asks AI")
         .hexpand(true)
         .build();
     input.set_widget_name("search");
@@ -459,12 +521,25 @@ fn build_ui(app: &Application) {
     list.set_widget_name("results");
     list.set_selection_mode(gtk::SelectionMode::Single);
 
+    let response = Label::new(None);
+    response.set_widget_name("response");
+    response.set_wrap(true);
+    response.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    response.set_selectable(true);
+    response.set_halign(Align::Start);
+    response.set_xalign(0.0);
+    response.set_visible(false);
+
+    let content = GtkBox::new(Orientation::Vertical, 0);
+    content.append(&list);
+    content.append(&response);
+
     let scroll = ScrolledWindow::builder()
         .max_content_height(config.ui.result_max_height.max(120))
         .propagate_natural_height(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
-        .child(&list)
+        .child(&content)
         .build();
     scroll.set_visible(false);
 
@@ -475,9 +550,36 @@ fn build_ui(app: &Application) {
     let state = Arc::new(RwLock::new(Vec::<SearchResult>::new()));
     render_results(&list, &scroll, &[], "", &config.ui);
 
+    let activate: Rc<dyn Fn(&SearchItem)> = {
+        let app = app.clone();
+        let config = config.clone();
+        let list = list.clone();
+        let scroll = scroll.clone();
+        let response = response.clone();
+        Rc::new(move |item: &SearchItem| {
+            if matches!(item.kind, ItemKind::AiPrompt) {
+                if item.target.is_empty() {
+                    return;
+                }
+                list.set_visible(false);
+                scroll.set_visible(true);
+                response.set_text("Thinking…");
+                response.set_visible(true);
+                ask_ai(&config.ai, &item.target, &response);
+                return;
+            }
+            if let Err(error) = launch(item) {
+                eprintln!("launch failed: {error:#}");
+            } else {
+                app.quit();
+            }
+        })
+    };
+
     {
         let list = list.clone();
         let scroll = scroll.clone();
+        let response = response.clone();
         let index = index.clone();
         let state = state.clone();
         let config = config.clone();
@@ -488,6 +590,8 @@ fn build_ui(app: &Application) {
             if let Ok(mut state) = state.write() {
                 *state = results.clone();
             }
+            response.set_visible(false);
+            list.set_visible(true);
             render_results(&list, &scroll, &results, &query, &config.ui);
             eprintln!(
                 "search `{query}`: {} results in {:?}",
@@ -502,6 +606,7 @@ fn build_ui(app: &Application) {
         let input_for_handler = input.clone();
         let list = list.clone();
         let state = state.clone();
+        let activate = activate.clone();
         let key = EventControllerKey::new();
         key.set_propagation_phase(gtk::PropagationPhase::Capture);
         key.connect_key_pressed(move |_, key, _, _| match key {
@@ -515,11 +620,7 @@ fn build_ui(app: &Application) {
             }
             gdk::Key::Return | gdk::Key::KP_Enter => {
                 if let Some(item) = selected_item(&state, &list) {
-                    if let Err(error) = launch(&item) {
-                        eprintln!("launch failed: {error:#}");
-                    } else {
-                        app.quit();
-                    }
+                    activate(&item);
                 }
                 glib::Propagation::Stop
             }
@@ -537,18 +638,14 @@ fn build_ui(app: &Application) {
     }
 
     {
-        let app = app.clone();
         let state = state.clone();
         let list = list.clone();
+        let activate = activate.clone();
         let key = EventControllerKey::new();
         key.connect_key_pressed(move |_, key, _, _| match key {
             gdk::Key::Return | gdk::Key::KP_Enter => {
                 if let Some(item) = selected_item(&state, &list) {
-                    if let Err(error) = launch(&item) {
-                        eprintln!("launch failed: {error:#}");
-                    } else {
-                        app.quit();
-                    }
+                    activate(&item);
                 }
                 glib::Propagation::Stop
             }
@@ -670,6 +767,7 @@ impl Config {
         if self.index_dirs.is_empty() {
             self.index_dirs = default_index_dirs();
         }
+        self.ai.sanitize();
         self.ui.sanitize();
     }
 }
@@ -743,10 +841,19 @@ fn spawn_indexer(index: SharedIndex, config: Arc<Config>) {
 }
 
 fn search(index: &SharedIndex, query: &str, max_results: usize) -> Vec<SearchResult> {
-    let query = query.trim().to_lowercase();
-    if query.is_empty() {
+    let raw = query.trim();
+    if raw.is_empty() {
         return Vec::new();
     }
+
+    if let Some(prompt) = raw.strip_prefix('/') {
+        return vec![SearchResult {
+            item: ai_prompt_item(prompt.trim()),
+            score: 0,
+        }];
+    }
+
+    let query = raw.to_lowercase();
 
     let items = match index.read() {
         Ok(index) => index.items.clone(),
@@ -775,7 +882,7 @@ fn search(index: &SharedIndex, query: &str, max_results: usize) -> Vec<SearchRes
 
     if results.is_empty() {
         results.push(SearchResult {
-            item: web_search_item(&query),
+            item: web_search_item(raw),
             score: 0,
         });
     }
@@ -783,14 +890,29 @@ fn search(index: &SharedIndex, query: &str, max_results: usize) -> Vec<SearchRes
     results
 }
 
+fn ai_prompt_item(prompt: &str) -> SearchItem {
+    SearchItem {
+        title: if prompt.is_empty() {
+            "Ask AI".to_string()
+        } else {
+            format!("Ask AI: {prompt}")
+        },
+        subtitle: if prompt.is_empty() {
+            "Type a question after /".to_string()
+        } else {
+            "Press Enter to ask".to_string()
+        },
+        target: prompt.to_string(),
+        kind: ItemKind::AiPrompt,
+        tokens: String::new(),
+    }
+}
+
 fn web_search_item(query: &str) -> SearchItem {
     SearchItem {
         title: format!("Search Google for \"{query}\""),
         subtitle: "Open in default browser".to_string(),
-        target: format!(
-            "https://www.google.com/search?q={}",
-            percent_encode(query)
-        ),
+        target: format!("https://www.google.com/search?q={}", percent_encode(query)),
         kind: ItemKind::WebSearch,
         tokens: query.to_string(),
     }
@@ -843,6 +965,7 @@ fn kind_boost(kind: &ItemKind) -> i64 {
         ItemKind::Directory => 800,
         ItemKind::File => 0,
         ItemKind::WebSearch => 0,
+        ItemKind::AiPrompt => 0,
     }
 }
 
@@ -1073,6 +1196,7 @@ fn render_results(
                 ItemKind::File => "□",
                 ItemKind::Directory => "▣",
                 ItemKind::WebSearch => "⌕",
+                ItemKind::AiPrompt => "✦",
             };
             list.append(&result_row(
                 &result.item.title,
@@ -1155,8 +1279,60 @@ fn launch(item: &SearchItem) -> Result<()> {
         ItemKind::File | ItemKind::Directory | ItemKind::WebSearch => {
             open::that_detached(&item.target)?;
         }
+        // Handled by the activate closure in build_ui; never launched.
+        ItemKind::AiPrompt => {}
     }
     Ok(())
+}
+
+fn ask_ai(ai: &AiConfig, prompt: &str, output: &Label) {
+    let (tx, rx) = async_channel::bounded::<String>(1);
+    let ai = ai.clone();
+    let prompt = prompt.to_string();
+    thread::spawn(move || {
+        let message = match request_completion(&ai, &prompt) {
+            Ok(text) => text,
+            Err(error) => format!("AI request failed: {error:#}"),
+        };
+        let _ = tx.send_blocking(message);
+    });
+
+    let output = output.clone();
+    glib::spawn_future_local(async move {
+        if let Ok(message) = rx.recv().await {
+            output.set_text(&message);
+        }
+    });
+}
+
+fn request_completion(ai: &AiConfig, prompt: &str) -> Result<String> {
+    let url = format!("{}/chat/completions", ai.base_url.trim_end_matches('/'));
+    let mut request = ureq::post(&url)
+        .timeout(Duration::from_secs(60))
+        .set("Content-Type", "application/json");
+    if let Some(key) = ai.resolve_api_key() {
+        request = request.set("Authorization", &format!("Bearer {key}"));
+    }
+
+    let response = request.send_json(serde_json::json!({
+        "model": ai.model,
+        "messages": [{"role": "user", "content": prompt}],
+    }));
+
+    let body: serde_json::Value = match response {
+        Ok(response) => response.into_json().context("read response body")?,
+        Err(ureq::Error::Status(code, response)) => {
+            let mut detail = response.into_string().unwrap_or_default();
+            detail.truncate(500);
+            anyhow::bail!("HTTP {code} from {url}: {detail}");
+        }
+        Err(error) => return Err(error).with_context(|| format!("request {url}")),
+    };
+
+    body["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|text| text.trim().to_string())
+        .context("no completion text in response")
 }
 
 #[cfg(test)]
@@ -1230,6 +1406,95 @@ mod tests {
     }
 
     #[test]
+    fn slash_query_becomes_ai_prompt() {
+        let index: SharedIndex = Arc::new(RwLock::new(SearchIndex::default()));
+        let results = search(&index, "/what is Rust?", 9);
+        assert_eq!(results.len(), 1);
+        assert!(matches!(results[0].item.kind, ItemKind::AiPrompt));
+        assert_eq!(results[0].item.target, "what is Rust?");
+
+        let empty = search(&index, "/", 9);
+        assert!(matches!(empty[0].item.kind, ItemKind::AiPrompt));
+        assert_eq!(empty[0].item.target, "");
+    }
+
+    #[test]
+    fn request_completion_talks_to_openai_compatible_endpoint() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = stream.read(&mut buf).unwrap();
+                request.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&request);
+                if let Some(headers_end) = text.find("\r\n\r\n") {
+                    let content_length = text
+                        .lines()
+                        .find_map(|line| {
+                            line.to_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(str::trim)
+                                .map(String::from)
+                        })
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= headers_end + 4 + content_length {
+                        break;
+                    }
+                }
+            }
+            let body =
+                r#"{"choices":[{"message":{"role":"assistant","content":"Hello from mock"}}]}"#;
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(reply.as_bytes()).unwrap();
+            String::from_utf8_lossy(&request).to_string()
+        });
+
+        let ai = AiConfig {
+            base_url: format!("http://{addr}/v1"),
+            api_key: "test-key".to_string(),
+            model: "test-model".to_string(),
+        };
+        let text = request_completion(&ai, "hi there").unwrap();
+        assert_eq!(text, "Hello from mock");
+
+        let request = server.join().unwrap();
+        assert!(
+            request.starts_with("POST /v1/chat/completions"),
+            "{request}"
+        );
+        assert!(request.contains("Bearer test-key"), "{request}");
+        assert!(request.contains("test-model"), "{request}");
+        assert!(request.contains("hi there"), "{request}");
+    }
+
+    #[test]
+    fn ai_config_sanitize_trims_base_url() {
+        let mut ai = AiConfig {
+            base_url: "http://localhost:11434/v1/".to_string(),
+            ..AiConfig::default()
+        };
+        ai.sanitize();
+        assert_eq!(ai.base_url, "http://localhost:11434/v1");
+
+        let mut empty = AiConfig {
+            base_url: "  ".to_string(),
+            ..AiConfig::default()
+        };
+        empty.sanitize();
+        assert_eq!(empty.base_url, "https://api.openai.com/v1");
+    }
+
+    #[test]
     fn web_search_item_encodes_query() {
         let item = web_search_item("weather in tokyo?");
         assert_eq!(
@@ -1295,6 +1560,12 @@ window {{
   color: {};
   font-size: {}px;
 }}
+
+#response {{
+  padding: 10px 12px;
+  color: {};
+  font-size: {}px;
+}}
 "#,
         ui.colors.window_background,
         ui.shell_margin,
@@ -1317,6 +1588,8 @@ window {{
         ui.colors.title,
         ui.title_font_size,
         ui.colors.subtitle,
-        ui.subtitle_font_size
+        ui.subtitle_font_size,
+        ui.colors.title,
+        ui.subtitle_font_size + 2
     )
 }
