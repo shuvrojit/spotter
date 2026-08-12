@@ -57,60 +57,22 @@ Spotter creates this file on first launch:
 ~/.config/spotter/config.toml
 ```
 
-Default config:
+The annotated [config.example.toml](config.example.toml) is also compiled into
+the binary as the first-launch default. Copy it to start from a fresh config:
 
-```toml
-max_results = 9
-max_result_height = 420
-max_indexed_items = 60000
-index_depth = 5
-include_hidden = false
-
-index_dirs = [
-  "Desktop",
-  "Documents",
-  "Downloads",
-  "Pictures",
-  "Music",
-  "Videos",
-]
-
-[ui]
-position = "top-left"
-x = 96
-y = 72
-window_width = 720
-result_max_height = 420
-shell_margin = 24
-shell_padding = 18
-shell_radius = 18
-search_height = 54
-search_radius = 12
-search_font_size = 24
-result_margin_top = 12
-result_row_padding_y = 10
-result_row_padding_x = 14
-result_row_radius = 10
-title_font_size = 16
-subtitle_font_size = 12
-icon_font_size = 20
-
-[ui.colors]
-window_background = "transparent"
-shell_background = "rgba(28, 31, 36, 0.96)"
-shell_border = "rgba(255, 255, 255, 0.14)"
-search_background = "rgba(255, 255, 255, 0.1)"
-search_text = "#f5f7fa"
-results_background = "transparent"
-row_background = "transparent"
-row_selected_background = "rgba(108, 160, 255, 0.28)"
-icon = "#9fb7ff"
-title = "#f5f7fa"
-subtitle = "#aeb6c2"
+```sh
+mkdir -p "$HOME/.config/spotter"
+cp config.example.toml "$HOME/.config/spotter/config.toml"
 ```
 
-`index_dirs` accepts paths relative to your home directory, `~/...` paths, or absolute paths.
-`position`, `x`, and `y` store the preferred placement. On Sway, Spotter uses `swaymsg` to make the launcher floating and move it to the configured coordinates. Other Wayland compositors may ignore exact placement unless they expose a compositor-specific positioning command.
+Sway supports all documented anchors, including `top-right`, and applies
+`window_width` exactly. The result pane grows naturally up to
+`result_max_height`. Other Wayland compositors control placement unless they
+provide a compatible positioning API.
+
+Invalid TOML cannot be applied. Spotter shows the parse error in the launcher
+and uses defaults until the file is corrected. Restart Spotter after editing
+configuration values.
 
 ## Global Shortcut
 

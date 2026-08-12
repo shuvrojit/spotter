@@ -43,76 +43,7 @@ const DEFAULT_RESULT_ROW_RADIUS: i32 = 10;
 const DEFAULT_TITLE_FONT_SIZE: i32 = 16;
 const DEFAULT_SUBTITLE_FONT_SIZE: i32 = 12;
 const DEFAULT_ICON_FONT_SIZE: i32 = 20;
-const DEFAULT_CONFIG: &str = r##"# Spotter configuration
-
-# Maximum number of rows shown for a query.
-max_results = 9
-
-# Backward-compatible result pane height. Prefer [ui].result_max_height.
-max_result_height = 420
-
-# Maximum number of filesystem entries indexed per configured root.
-max_indexed_items = 60000
-
-# Walk depth for filesystem roots.
-index_depth = 5
-
-# Include dotfiles and hidden folders while indexing.
-include_hidden = false
-
-# Desktop folders to index, relative to your home directory.
-index_dirs = [
-  "Desktop",
-  "Documents",
-  "Downloads",
-  "Pictures",
-  "Music",
-  "Videos",
-]
-
-[ai]
-# OpenAI-compatible endpoint used when a query starts with `/`.
-# Works with OpenAI, Ollama (http://localhost:11434/v1), llama.cpp, etc.
-base_url = "https://api.openai.com/v1"
-# Leave empty to use the OPENAI_API_KEY environment variable instead.
-api_key = ""
-model = "gpt-4o-mini"
-
-[ui]
-# GTK4/Wayland compositors usually control exact window position.
-# Spotter defaults to a slightly inset top-left preference.
-position = "top-left"
-x = 96
-y = 72
-window_width = 720
-result_max_height = 420
-shell_margin = 24
-shell_padding = 18
-shell_radius = 18
-search_height = 54
-search_radius = 12
-search_font_size = 24
-result_margin_top = 12
-result_row_padding_y = 10
-result_row_padding_x = 14
-result_row_radius = 10
-title_font_size = 16
-subtitle_font_size = 12
-icon_font_size = 20
-
-[ui.colors]
-window_background = "transparent"
-shell_background = "rgba(28, 31, 36, 0.96)"
-shell_border = "rgba(255, 255, 255, 0.14)"
-search_background = "rgba(255, 255, 255, 0.1)"
-search_text = "#f5f7fa"
-results_background = "transparent"
-row_background = "transparent"
-row_selected_background = "rgba(108, 160, 255, 0.28)"
-icon = "#9fb7ff"
-title = "#f5f7fa"
-subtitle = "#aeb6c2"
-"##;
+const DEFAULT_CONFIG: &str = include_str!("../config.example.toml");
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Config {
@@ -310,6 +241,73 @@ impl Default for UiColors {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowPosition {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    CenterLeft,
+    Center,
+    CenterRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
+    Custom,
+}
+
+impl WindowPosition {
+    fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "top-left" => Some(Self::TopLeft),
+            "top-center" => Some(Self::TopCenter),
+            "top-right" => Some(Self::TopRight),
+            "center-left" => Some(Self::CenterLeft),
+            "center" => Some(Self::Center),
+            "center-right" => Some(Self::CenterRight),
+            "bottom-left" => Some(Self::BottomLeft),
+            "bottom-center" => Some(Self::BottomCenter),
+            "bottom-right" => Some(Self::BottomRight),
+            "custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+
+    fn normalized(self) -> &'static str {
+        match self {
+            Self::TopLeft => "top-left",
+            Self::TopCenter => "top-center",
+            Self::TopRight => "top-right",
+            Self::CenterLeft => "center-left",
+            Self::Center => "center",
+            Self::CenterRight => "center-right",
+            Self::BottomLeft => "bottom-left",
+            Self::BottomCenter => "bottom-center",
+            Self::BottomRight => "bottom-right",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+struct SwayRect {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct SwayWorkspace {
+    focused: bool,
+    rect: SwayRect,
+}
+
+#[derive(Debug, Deserialize)]
+struct SwayCommandResult {
+    success: bool,
+    error: Option<String>,
+}
+
 fn default_max_results() -> usize {
     DEFAULT_MAX_RESULTS
 }
@@ -483,10 +481,15 @@ fn main() {
 }
 
 fn build_ui(app: &Application) {
-    let config = Arc::new(load_config().unwrap_or_else(|error| {
-        eprintln!("failed to load config, using defaults: {error:#}");
-        Config::default()
-    }));
+    let (config, config_error) = match load_config() {
+        Ok(config) => (config, None),
+        Err(error) => {
+            eprintln!("failed to load config, using defaults: {error:#}");
+            let message = "Configuration error in config.toml. Check its TOML syntax, then restart Spotter. Defaults are active for this launch.".to_string();
+            (Config::default(), Some(message))
+        }
+    };
+    let config = Arc::new(config);
     let index = Arc::new(RwLock::new(SearchIndex::default()));
 
     let window = ApplicationWindow::builder()
@@ -496,6 +499,8 @@ fn build_ui(app: &Application) {
         .resizable(false)
         .decorated(false)
         .build();
+    window.set_size_request(config.ui.window_width, -1);
+    window.set_overflow(gtk::Overflow::Hidden);
 
     let provider = gtk::CssProvider::new();
     let style = build_style(&config.ui);
@@ -549,6 +554,12 @@ fn build_ui(app: &Application) {
 
     let state = Arc::new(RwLock::new(Vec::<SearchResult>::new()));
     render_results(&list, &scroll, &[], "", &config.ui);
+    if let Some(error) = config_error {
+        list.set_visible(false);
+        response.set_text(&error);
+        response.set_visible(true);
+        scroll.set_visible(true);
+    }
 
     let activate: Rc<dyn Fn(&SearchItem)> = {
         let app = app.clone();
@@ -583,6 +594,7 @@ fn build_ui(app: &Application) {
         let index = index.clone();
         let state = state.clone();
         let config = config.clone();
+        let window = window.clone();
         input.connect_search_changed(move |entry| {
             let query = entry.text().to_string();
             let now = Instant::now();
@@ -593,6 +605,7 @@ fn build_ui(app: &Application) {
             response.set_visible(false);
             list.set_visible(true);
             render_results(&list, &scroll, &results, &query, &config.ui);
+            schedule_window_reposition(&window, config.ui.clone());
             eprintln!(
                 "search `{query}`: {} results in {:?}",
                 results.len(),
@@ -663,7 +676,7 @@ fn build_ui(app: &Application) {
     }
 
     window.present();
-    schedule_window_position(config.ui.clone());
+    schedule_window_position(&window, config.ui.clone());
     schedule_indexer(index.clone(), config.clone());
     input.grab_focus();
 }
@@ -672,23 +685,28 @@ fn schedule_indexer(index: SharedIndex, config: Arc<Config>) {
     glib::idle_add_once(move || spawn_indexer(index, config));
 }
 
-fn schedule_window_position(ui: UiConfig) {
+fn schedule_window_position(window: &ApplicationWindow, ui: UiConfig) {
     for attempt in 1..=4 {
+        let window = window.clone();
         let ui = ui.clone();
-        glib::timeout_add_once(Duration::from_millis(120 * attempt), move || {
-            apply_window_position(&ui)
+        glib::timeout_add_local_once(Duration::from_millis(120 * attempt), move || {
+            apply_window_position(&window, &ui)
         });
     }
 }
 
-fn apply_window_position(ui: &UiConfig) {
-    let position = ui.position.trim().to_lowercase();
-    if !matches!(position.as_str(), "top-left" | "custom") {
-        return;
-    }
+fn schedule_window_reposition(window: &ApplicationWindow, ui: UiConfig) {
+    let window = window.clone();
+    glib::timeout_add_local_once(Duration::from_millis(30), move || {
+        apply_window_position(&window, &ui)
+    });
+}
 
+fn apply_window_position(window: &ApplicationWindow, ui: &UiConfig) {
     if env::var_os("SWAYSOCK").is_some() && command_exists("swaymsg") {
-        position_with_sway(ui);
+        if let Err(error) = position_with_sway(window, ui) {
+            eprintln!("failed to position window with swaymsg: {error:#}");
+        }
         return;
     }
 
@@ -698,17 +716,110 @@ fn apply_window_position(ui: &UiConfig) {
     );
 }
 
-fn position_with_sway(ui: &UiConfig) {
+fn position_with_sway(window: &ApplicationWindow, ui: &UiConfig) -> Result<()> {
+    let position = WindowPosition::parse(&ui.position).unwrap_or(WindowPosition::TopLeft);
+    let window_width = window.allocated_width().max(ui.window_width).max(1);
+    let window_height = window.allocated_height().max(1);
+    let (x, y) = if position == WindowPosition::Custom {
+        (ui.x, ui.y)
+    } else {
+        calculate_window_position(
+            position,
+            focused_sway_workspace()?,
+            window_width,
+            window_height,
+            ui.x,
+            ui.y,
+        )
+    };
+
     let command = format!(
-        r#"[app_id="{}"] floating enable, move position {} {}"#,
-        APP_ID,
-        ui.x.max(0),
-        ui.y.max(0)
+        r#"[app_id="{APP_ID}"] floating enable, resize set width {} px, move absolute position {} px {} px"#,
+        ui.window_width, x, y
     );
 
-    if let Err(error) = Command::new("swaymsg").arg(command).status() {
-        eprintln!("failed to position window with swaymsg: {error}");
+    let output = Command::new("swaymsg")
+        .arg(command)
+        .output()
+        .context("run swaymsg window command")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "swaymsg window command exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
+
+    let results: Vec<SwayCommandResult> =
+        serde_json::from_slice(&output.stdout).context("parse swaymsg window result")?;
+    if let Some(result) = results.into_iter().find(|result| !result.success) {
+        anyhow::bail!(
+            "swaymsg rejected window command: {}",
+            result.error.as_deref().unwrap_or("unknown error")
+        );
+    }
+    Ok(())
+}
+
+fn focused_sway_workspace() -> Result<SwayRect> {
+    let output = Command::new("swaymsg")
+        .args(["-t", "get_workspaces", "-r"])
+        .output()
+        .context("query Sway workspaces")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "swaymsg workspace query exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    let workspaces: Vec<SwayWorkspace> =
+        serde_json::from_slice(&output.stdout).context("parse Sway workspace geometry")?;
+    workspaces
+        .into_iter()
+        .find(|workspace| workspace.focused)
+        .map(|workspace| workspace.rect)
+        .context("Sway reported no focused workspace")
+}
+
+fn calculate_window_position(
+    position: WindowPosition,
+    workspace: SwayRect,
+    window_width: i32,
+    window_height: i32,
+    x_offset: i32,
+    y_offset: i32,
+) -> (i32, i32) {
+    if position == WindowPosition::Custom {
+        return (x_offset, y_offset);
+    }
+
+    let left = workspace.x + x_offset.max(0);
+    let center_x = workspace.x + (workspace.width - window_width) / 2 + x_offset;
+    let right = workspace.x + workspace.width - window_width - x_offset.max(0);
+    let top = workspace.y + y_offset.max(0);
+    let center_y = workspace.y + (workspace.height - window_height) / 2 + y_offset;
+    let bottom = workspace.y + workspace.height - window_height - y_offset.max(0);
+
+    let (x, y) = match position {
+        WindowPosition::TopLeft => (left, top),
+        WindowPosition::TopCenter => (center_x, top),
+        WindowPosition::TopRight => (right, top),
+        WindowPosition::CenterLeft => (left, center_y),
+        WindowPosition::Center => (center_x, center_y),
+        WindowPosition::CenterRight => (right, center_y),
+        WindowPosition::BottomLeft => (left, bottom),
+        WindowPosition::BottomCenter => (center_x, bottom),
+        WindowPosition::BottomRight => (right, bottom),
+        WindowPosition::Custom => unreachable!(),
+    };
+
+    let min_x = workspace.x;
+    let max_x = workspace.x + (workspace.width - window_width).max(0);
+    let min_y = workspace.y;
+    let max_y = workspace.y + (workspace.height - window_height).max(0);
+    (x.clamp(min_x, max_x), y.clamp(min_y, max_y))
 }
 
 fn command_exists(command: &str) -> bool {
@@ -774,8 +885,12 @@ impl Config {
 
 impl UiConfig {
     fn sanitize(&mut self) {
-        self.window_width = self.window_width.max(320);
-        self.result_max_height = self.result_max_height.max(120);
+        let position = WindowPosition::parse(&self.position).unwrap_or(WindowPosition::TopLeft);
+        self.position = position.normalized().to_string();
+        self.x = self.x.clamp(-100_000, 100_000);
+        self.y = self.y.clamp(-100_000, 100_000);
+        self.window_width = self.window_width.clamp(320, 3840);
+        self.result_max_height = self.result_max_height.clamp(120, 2160);
         self.shell_margin = self.shell_margin.clamp(0, 96);
         self.shell_padding = self.shell_padding.clamp(0, 96);
         self.shell_radius = self.shell_radius.clamp(0, 48);
@@ -795,30 +910,29 @@ impl UiConfig {
 
 impl UiColors {
     fn sanitize(&mut self) {
-        sanitize_css_value(&mut self.window_background, default_window_background());
-        sanitize_css_value(&mut self.shell_background, default_shell_background());
-        sanitize_css_value(&mut self.shell_border, default_shell_border());
-        sanitize_css_value(&mut self.search_background, default_search_background());
-        sanitize_css_value(&mut self.search_text, default_search_text());
-        sanitize_css_value(&mut self.results_background, default_results_background());
-        sanitize_css_value(&mut self.row_background, default_row_background());
-        sanitize_css_value(
+        sanitize_css_color(&mut self.window_background, default_window_background());
+        sanitize_css_color(&mut self.shell_background, default_shell_background());
+        sanitize_css_color(&mut self.shell_border, default_shell_border());
+        sanitize_css_color(&mut self.search_background, default_search_background());
+        sanitize_css_color(&mut self.search_text, default_search_text());
+        sanitize_css_color(&mut self.results_background, default_results_background());
+        sanitize_css_color(&mut self.row_background, default_row_background());
+        sanitize_css_color(
             &mut self.row_selected_background,
             default_row_selected_background(),
         );
-        sanitize_css_value(&mut self.icon, default_icon_color());
-        sanitize_css_value(&mut self.title, default_title_color());
-        sanitize_css_value(&mut self.subtitle, default_subtitle_color());
+        sanitize_css_color(&mut self.icon, default_icon_color());
+        sanitize_css_color(&mut self.title, default_title_color());
+        sanitize_css_color(&mut self.subtitle, default_subtitle_color());
     }
 }
 
-fn sanitize_css_value(value: &mut String, fallback: String) {
-    let valid = !value.trim().is_empty()
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || "#(),.% -_".contains(ch));
-    if !valid {
+fn sanitize_css_color(value: &mut String, fallback: String) {
+    let trimmed = value.trim();
+    if gdk::RGBA::parse(trimmed).is_err() {
         *value = fallback;
+    } else {
+        *value = trimmed.to_string();
     }
 }
 
@@ -1345,6 +1459,54 @@ mod tests {
     }
 
     #[test]
+    fn example_config_is_valid() {
+        let mut config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
+        config.sanitize();
+        assert_eq!(config.ui.position, "top-left");
+        assert_eq!(config.ui.window_width, 720);
+        assert_eq!(config.ui.search_height, 54);
+    }
+
+    #[test]
+    fn anchored_positions_use_window_geometry_and_offsets() {
+        let workspace = SwayRect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        assert_eq!(
+            calculate_window_position(WindowPosition::TopRight, workspace, 720, 100, 96, 72),
+            (1104, 72)
+        );
+        assert_eq!(
+            calculate_window_position(WindowPosition::BottomCenter, workspace, 720, 100, 0, 20),
+            (600, 960)
+        );
+        assert_eq!(
+            calculate_window_position(WindowPosition::Custom, workspace, 720, 100, -800, 50),
+            (-800, 50)
+        );
+    }
+
+    #[test]
+    fn invalid_ui_values_fall_back_or_clamp() {
+        let mut ui = UiConfig {
+            position: "somewhere".to_string(),
+            window_width: 100,
+            ..UiConfig::default()
+        };
+        ui.colors.search_background = "not-a-color".to_string();
+        ui.colors.title = "  #12345678  ".to_string();
+        ui.sanitize();
+
+        assert_eq!(ui.position, "top-left");
+        assert_eq!(ui.window_width, 320);
+        assert_eq!(ui.colors.search_background, default_search_background());
+        assert_eq!(ui.colors.title, "#12345678");
+    }
+
+    #[test]
     fn prefix_matches() {
         assert!(score("firefox web browser", "fir").is_some());
     }
@@ -1509,13 +1671,16 @@ fn build_style(ui: &UiConfig) -> String {
     format!(
         r#"
 window {{
-  background: {};
+  background-color: {};
+  background-image: none;
+  border-radius: {}px;
 }}
 
 #shell {{
   margin: {}px;
   padding: {}px;
-  background: {};
+  background-color: {};
+  background-image: none;
   border: 1px solid {};
   border-radius: {}px;
   box-shadow: 0 18px 70px rgba(0, 0, 0, 0.38);
@@ -1526,23 +1691,38 @@ window {{
   padding: 0 16px;
   border: 0;
   border-radius: {}px;
-  background: {};
+  background-color: {};
+  background-image: none;
   color: {};
   font-size: {}px;
 }}
 
+#search text {{
+  background-color: transparent;
+  background-image: none;
+  color: {};
+  caret-color: {};
+}}
+
+#search image {{
+  color: {};
+}}
+
 #results {{
   margin-top: {}px;
-  background: {};
+  background-color: {};
+  background-image: none;
 }}
 
 #result-row {{
   border-radius: {}px;
-  background: {};
+  background-color: {};
+  background-image: none;
 }}
 
 #result-row:selected {{
-  background: {};
+  background-color: {};
+  background-image: none;
 }}
 
 #icon {{
@@ -1568,6 +1748,7 @@ window {{
 }}
 "#,
         ui.colors.window_background,
+        ui.shell_radius + ui.shell_margin,
         ui.shell_margin,
         ui.shell_padding,
         ui.colors.shell_background,
@@ -1578,6 +1759,9 @@ window {{
         ui.colors.search_background,
         ui.colors.search_text,
         ui.search_font_size,
+        ui.colors.search_text,
+        ui.colors.search_text,
+        ui.colors.search_text,
         ui.result_margin_top,
         ui.colors.results_background,
         ui.result_row_radius,

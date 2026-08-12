@@ -7,6 +7,17 @@ All notable changes to Spotter are documented in this file.
 ### Added
 
 - Make targets for release builds and configurable installation paths.
+- Annotated `config.example.toml` with supported UI values and color formats.
+
+### Fixed
+
+- Apply anchored Sway positions, exact configured width, and updated placement
+  after the result pane changes height.
+- Prevent GTK theme backgrounds from overriding configured UI colors.
+- Clip the GTK window to the configured shell radius to remove square corner
+  residue around the launcher.
+- Show malformed configuration errors in the launcher instead of silently
+  ignoring the entire file.
 
 ### Removed
 
