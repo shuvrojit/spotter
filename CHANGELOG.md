@@ -8,6 +8,10 @@ All notable changes to Spotter are documented in this file.
 
 - Make targets for release builds and configurable installation paths.
 
+### Removed
+
+- Multiple build name references
+
 ## [v0.1] - 2026-08-12
 
 ### Added
