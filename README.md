@@ -21,7 +21,7 @@ cargo run --release
 ## Build
 
 ```sh
-cargo build --release
+make
 ```
 
 The binary is created at:
@@ -29,6 +29,25 @@ The binary is created at:
 ```sh
 target/release/spotter
 ```
+
+You can also build it directly with `cargo build --release --bin spotter`.
+
+## Install
+
+Install system-wide under `/usr/local/bin`:
+
+```sh
+sudo make install
+```
+
+For a per-user installation, use:
+
+```sh
+make install PREFIX="$HOME/.local"
+```
+
+`PREFIX`, `BINDIR`, and `DESTDIR` can be overridden for packaging or custom
+installation layouts.
 
 ## Configuration
 
@@ -98,14 +117,14 @@ subtitle = "#aeb6c2"
 On Linux, global shortcuts are desktop-environment specific, especially under Wayland. Bind your preferred shortcut to:
 
 ```sh
-/home/shuv40/Desktop/startups/spotlight-l/target/release/spotter
+spotter
 ```
 
 Examples:
 
 - GNOME: Settings -> Keyboard -> View and Customize Shortcuts -> Custom Shortcuts.
 - KDE Plasma: System Settings -> Shortcuts -> Custom Shortcuts.
-- i3/sway: bind a key to `exec /home/shuv40/Desktop/startups/spotlight-l/target/release/spotter`.
+- i3/sway: bind a key to `exec spotter`.
 
 ## Notes
 

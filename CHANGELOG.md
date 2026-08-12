@@ -2,6 +2,12 @@
 
 All notable changes to Spotter are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Make targets for release builds and configurable installation paths.
+
 ## [v0.1] - 2026-08-12
 
 ### Added
