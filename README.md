@@ -1,6 +1,6 @@
 # Spotter
 
-A fast Spotlight-style launcher for Linux, written in Rust.
+A fast application launcher for Linux, written in Rust.
 
 ## Features
 
