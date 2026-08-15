@@ -10,6 +10,8 @@ All notable changes to Spotter are documented in this file.
 - Annotated `config.example.toml` with supported UI values and color formats.
 - Original application icons from desktop entries, with a glyph fallback when
   an icon is unavailable.
+- Persistent, deduplicated recent searches shown newest-first when the search
+  input is empty.
 
 ### Fixed
 

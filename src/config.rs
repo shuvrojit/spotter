@@ -6,6 +6,7 @@ use std::{env, fs};
 const CONFIG_DIR_NAME: &str = "spotter";
 const CONFIG_FILE_NAME: &str = "config.toml";
 const DEFAULT_MAX_RESULTS: usize = 9;
+const DEFAULT_MAX_RECENT_SEARCHES: usize = 8;
 const DEFAULT_MAX_RESULT_HEIGHT: i32 = 420;
 const DEFAULT_MAX_INDEXED_ITEMS: usize = 60_000;
 const DEFAULT_INDEX_DEPTH: usize = 5;
@@ -29,6 +30,8 @@ const DEFAULT_CONFIG: &str = include_str!("../config.example.toml");
 pub(crate) struct Config {
     #[serde(default = "default_max_results")]
     pub(crate) max_results: usize,
+    #[serde(default = "default_max_recent_searches")]
+    pub(crate) max_recent_searches: usize,
     #[serde(default = "default_max_result_height")]
     max_result_height: i32,
     #[serde(default = "default_max_indexed_items")]
@@ -49,6 +52,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             max_results: default_max_results(),
+            max_recent_searches: default_max_recent_searches(),
             max_result_height: default_max_result_height(),
             max_indexed_items: default_max_indexed_items(),
             index_depth: default_index_depth(),
@@ -287,6 +291,7 @@ impl Config {
         if self.max_results == 0 {
             self.max_results = DEFAULT_MAX_RESULTS;
         }
+        self.max_recent_searches = self.max_recent_searches.min(50);
         if self.max_result_height < 120 {
             self.max_result_height = 120;
         }
@@ -370,6 +375,10 @@ fn default_ai_model() -> String {
 
 fn default_max_results() -> usize {
     DEFAULT_MAX_RESULTS
+}
+
+fn default_max_recent_searches() -> usize {
+    DEFAULT_MAX_RECENT_SEARCHES
 }
 
 fn default_max_result_height() -> i32 {
@@ -513,6 +522,7 @@ mod tests {
         assert_eq!(config.ui.position, "top-left");
         assert_eq!(config.ui.window_width, 720);
         assert_eq!(config.ui.search_height, 54);
+        assert_eq!(config.max_recent_searches, 8);
     }
 
     #[test]
@@ -530,6 +540,20 @@ mod tests {
         assert_eq!(ui.window_width, 320);
         assert_eq!(ui.colors.search_background, default_search_background());
         assert_eq!(ui.colors.title, "#12345678");
+    }
+
+    #[test]
+    fn recent_search_limit_can_be_disabled_and_is_capped() {
+        let mut config = Config {
+            max_recent_searches: 51,
+            ..Config::default()
+        };
+        config.sanitize();
+        assert_eq!(config.max_recent_searches, 50);
+
+        config.max_recent_searches = 0;
+        config.sanitize();
+        assert_eq!(config.max_recent_searches, 0);
     }
 
     #[test]

@@ -16,6 +16,7 @@ use walkdir::{DirEntry, WalkDir};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ItemKind {
+    RecentSearch,
     Application,
     Command,
     File,
@@ -142,6 +143,24 @@ pub(crate) fn search(index: &SharedIndex, query: &str, max_results: usize) -> Ve
     results
 }
 
+pub(crate) fn recent_search_results(entries: &[String], max_results: usize) -> Vec<SearchResult> {
+    entries
+        .iter()
+        .take(max_results)
+        .map(|query| SearchResult {
+            item: SearchItem {
+                title: query.clone(),
+                subtitle: "Recent search · Press Enter to search again".to_string(),
+                target: query.clone(),
+                kind: ItemKind::RecentSearch,
+                tokens: query.to_lowercase(),
+                desktop_icon: None,
+            },
+            score: 0,
+        })
+        .collect()
+}
+
 fn ai_prompt_item(prompt: &str) -> SearchItem {
     SearchItem {
         title: if prompt.is_empty() {
@@ -213,6 +232,7 @@ fn match_score(tokens: &str, query: &str, terms: &[&str]) -> Option<i64> {
 
 fn kind_boost(kind: &ItemKind) -> i64 {
     match kind {
+        ItemKind::RecentSearch => 0,
         ItemKind::Application => 3_000,
         ItemKind::Command => 1_500,
         ItemKind::Directory => 800,
@@ -449,6 +469,17 @@ mod tests {
     #[test]
     fn prefix_matches() {
         assert!(score("firefox web browser", "fir").is_some());
+    }
+
+    #[test]
+    fn recent_search_results_preserve_newest_first_order() {
+        let entries = vec!["terminal".to_string(), "firefox".to_string()];
+        let results = recent_search_results(&entries, 1);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].item.title, "terminal");
+        assert_eq!(results[0].item.target, "terminal");
+        assert!(matches!(results[0].item.kind, ItemKind::RecentSearch));
     }
 
     #[test]

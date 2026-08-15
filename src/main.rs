@@ -1,5 +1,6 @@
 mod ai;
 mod config;
+mod history;
 mod platform;
 mod search;
 mod ui;

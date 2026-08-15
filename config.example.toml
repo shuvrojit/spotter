@@ -2,6 +2,7 @@
 
 # Search/index settings. Integers must be unquoted decimal values.
 max_results = 9
+max_recent_searches = 8 # 0 disables history; maximum 50.
 max_result_height = 420 # Legacy fallback for ui.result_max_height.
 max_indexed_items = 60000
 index_depth = 5
