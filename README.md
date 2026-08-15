@@ -6,6 +6,7 @@ A fast application launcher for Linux, written in Rust.
 
 - Native GTK command palette UI.
 - Searches installed desktop apps from `.desktop` files.
+- Shows each application's original themed or file-based icon when available.
 - Searches executable commands from `PATH`.
 - Indexes configured home folders and supports absolute paths.
 - Parallel fuzzy search with a small bounded result list for responsive typing.
@@ -90,4 +91,6 @@ Examples:
 
 ## Notes
 
-The first launch builds the in-memory index on a background thread. Search is available immediately and results fill in as indexing completes.
+The first launch builds the in-memory index on a background thread. Application
+and command results are published first, followed by filesystem entries. An
+active query refreshes automatically as each indexing stage completes.

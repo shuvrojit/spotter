@@ -54,7 +54,7 @@ result_row_padding_x = 14  # 2..48
 result_row_radius = 10     # 0..32
 title_font_size = 16       # 10..36
 subtitle_font_size = 12    # 8..28
-icon_font_size = 20        # 10..36
+icon_font_size = 20        # 10..36; pixel size for app icons
 
 [ui.colors]
 # GTK CSS colors are accepted: named colors ("black", "transparent"), hex
