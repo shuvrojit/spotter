@@ -15,6 +15,12 @@ A fast application launcher for Linux, written in Rust.
 - Opens apps, shell commands, files, and directories with `Enter`.
 - Loads configuration from `~/.config/spotter/config.toml`.
 
+## Screenshots
+
+![Spotter launcher](screenshot/screenshot-2026-08-16T12-50-55.647778317+06-00.png)
+
+![Spotter search results](screenshot/screenshot-2026-08-16T12-51-08.633432451+06-00.png)
+
 ## Run
 
 ```sh
