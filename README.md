@@ -12,6 +12,7 @@ A fast application launcher for Linux, written in Rust.
 - Parallel fuzzy search with a small bounded result list for responsive typing.
 - Persists recent searches and shows them newest-first when the input is empty.
 - Supports GNU Readline-style input editing and recent-history navigation.
+- Optionally stays available through a search-style system tray icon.
 - Opens apps, shell commands, files, and directories with `Enter`.
 - Loads configuration from `~/.config/spotter/config.toml`.
 
@@ -87,6 +88,11 @@ Set `max_recent_searches` to control how many queries are retained, or set it
 to `0` to disable search history. History is stored locally at
 `~/.local/share/spotter/recent-searches.json` by default. Selecting a recent
 query restores it so you can review the results before launching anything.
+
+Set `system_tray = true` to keep Spotter running after its window is hidden.
+Clicking the search icon presents the launcher again; its context menu also
+offers Open and Quit actions. A StatusNotifierItem-compatible tray host is
+required.
 
 ## Global Shortcut
 

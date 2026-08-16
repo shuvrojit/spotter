@@ -7,6 +7,7 @@ max_result_height = 420 # Legacy fallback for ui.result_max_height.
 max_indexed_items = 60000
 index_depth = 5
 include_hidden = false
+system_tray = false # Keep Spotter running with a clickable search tray icon.
 
 # Relative entries are resolved from the home directory. Absolute and ~/ paths
 # are also accepted.

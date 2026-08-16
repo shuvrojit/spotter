@@ -5,7 +5,7 @@ use crate::{
     platform,
     readline::ReadlineEditor,
     search::{self, ItemKind, SearchItem, SearchResult},
-    PRODUCT_NAME,
+    tray, PRODUCT_NAME,
 };
 use anyhow::Result;
 use gtk::gdk;
@@ -104,6 +104,21 @@ pub(crate) fn build(app: &Application) {
     root.append(&scroll);
     window.set_child(Some(&root));
 
+    let tray_runtime = if config.system_tray {
+        let (events, receiver) = async_channel::unbounded();
+        match tray::start(events) {
+            Ok(service) => Some((service, receiver)),
+            Err(error) => {
+                eprintln!("failed to start system tray; using normal exit behavior: {error:#}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let tray_active = tray_runtime.is_some();
+    window.set_hide_on_close(tray_active);
+
     let initial_results =
         search::recent_search_results(history.borrow().entries(), config.max_recent_searches);
     let state = Arc::new(RwLock::new(initial_results.clone()));
@@ -123,6 +138,7 @@ pub(crate) fn build(app: &Application) {
         let response = response.clone();
         let input = input.clone();
         let history = history.clone();
+        let window = window.clone();
         Rc::new(move |item: &SearchItem| {
             if matches!(item.kind, ItemKind::RecentSearch) {
                 input.set_text(&item.target);
@@ -148,6 +164,9 @@ pub(crate) fn build(app: &Application) {
             }
             if let Err(error) = launch(item) {
                 eprintln!("launch failed: {error:#}");
+            } else if tray_active {
+                input.set_text("");
+                window.set_visible(false);
             } else {
                 app.quit();
             }
@@ -205,6 +224,7 @@ pub(crate) fn build(app: &Application) {
         let activate = activate.clone();
         let history = history.clone();
         let readline = readline.clone();
+        let window = window.clone();
         let key = EventControllerKey::new();
         key.set_propagation_phase(gtk::PropagationPhase::Capture);
         key.connect_key_pressed(move |_, key, _, modifiers| {
@@ -220,7 +240,11 @@ pub(crate) fn build(app: &Application) {
             match key {
                 gdk::Key::Escape => {
                     if input_for_handler.text().is_empty() {
-                        app.quit();
+                        if tray_active {
+                            window.set_visible(false);
+                        } else {
+                            app.quit();
+                        }
                     } else {
                         input_for_handler.set_text("");
                     }
@@ -273,6 +297,9 @@ pub(crate) fn build(app: &Application) {
 
     window.present();
     platform::schedule_position(&window, config.ui.clone());
+    if let Some((service, events)) = tray_runtime {
+        listen_for_tray_events(app, &window, &input, config.ui.clone(), service, events);
+    }
     let updates = search::spawn_indexer(index, config);
     {
         let input = input.clone();
@@ -287,6 +314,37 @@ pub(crate) fn build(app: &Application) {
         });
     }
     input.grab_focus();
+}
+
+fn listen_for_tray_events(
+    app: &Application,
+    window: &ApplicationWindow,
+    input: &SearchEntry,
+    ui: UiConfig,
+    service: tray::Service,
+    events: async_channel::Receiver<tray::Event>,
+) {
+    let app = app.clone();
+    let window = window.clone();
+    let input = input.clone();
+    let hold = app.hold();
+    glib::spawn_future_local(async move {
+        let _hold = hold;
+        let _service = service;
+        while let Ok(event) = events.recv().await {
+            match event {
+                tray::Event::Open => {
+                    window.present();
+                    platform::schedule_position(&window, ui.clone());
+                    input.grab_focus();
+                }
+                tray::Event::Quit => {
+                    app.quit();
+                    break;
+                }
+            }
+        }
+    });
 }
 
 fn render_results(

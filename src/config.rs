@@ -40,6 +40,8 @@ pub(crate) struct Config {
     pub(crate) index_depth: usize,
     #[serde(default)]
     pub(crate) include_hidden: bool,
+    #[serde(default)]
+    pub(crate) system_tray: bool,
     #[serde(default = "default_index_dirs")]
     pub(crate) index_dirs: Vec<String>,
     #[serde(default)]
@@ -57,6 +59,7 @@ impl Default for Config {
             max_indexed_items: default_max_indexed_items(),
             index_depth: default_index_depth(),
             include_hidden: false,
+            system_tray: false,
             index_dirs: default_index_dirs(),
             ai: AiConfig::default(),
             ui: UiConfig::default(),
@@ -523,6 +526,7 @@ mod tests {
         assert_eq!(config.ui.window_width, 720);
         assert_eq!(config.ui.search_height, 54);
         assert_eq!(config.max_recent_searches, 8);
+        assert!(!config.system_tray);
     }
 
     #[test]
@@ -554,6 +558,12 @@ mod tests {
         config.max_recent_searches = 0;
         config.sanitize();
         assert_eq!(config.max_recent_searches, 0);
+    }
+
+    #[test]
+    fn system_tray_can_be_enabled() {
+        let config: Config = toml::from_str("system_tray = true").unwrap();
+        assert!(config.system_tray);
     }
 
     #[test]

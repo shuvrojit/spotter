@@ -4,6 +4,7 @@ mod history;
 mod platform;
 mod readline;
 mod search;
+mod tray;
 mod ui;
 
 use gtk::{prelude::*, Application};
@@ -13,6 +14,12 @@ const PRODUCT_NAME: &str = "Spotter";
 
 fn main() {
     let app = Application::builder().application_id(APP_ID).build();
-    app.connect_activate(ui::build);
+    app.connect_activate(|app| {
+        if let Some(window) = app.windows().first() {
+            window.present();
+        } else {
+            ui::build(app);
+        }
+    });
     app.run();
 }
