@@ -3,6 +3,7 @@ use crate::{
     config::{self, Config, UiConfig},
     history::RecentSearches,
     platform,
+    readline::ReadlineEditor,
     search::{self, ItemKind, SearchItem, SearchResult},
     PRODUCT_NAME,
 };
@@ -40,6 +41,7 @@ pub(crate) fn build(app: &Application) {
         }
     };
     let history = Rc::new(RefCell::new(history));
+    let readline = Rc::new(RefCell::new(ReadlineEditor::default()));
     let config = Arc::new(config);
     let index = search::empty_index();
 
@@ -201,32 +203,45 @@ pub(crate) fn build(app: &Application) {
         let list = list.clone();
         let state = state.clone();
         let activate = activate.clone();
+        let history = history.clone();
+        let readline = readline.clone();
         let key = EventControllerKey::new();
         key.set_propagation_phase(gtk::PropagationPhase::Capture);
-        key.connect_key_pressed(move |_, key, _, _| match key {
-            gdk::Key::Escape => {
-                if input_for_handler.text().is_empty() {
-                    app.quit();
-                } else {
-                    input_for_handler.set_text("");
+        key.connect_key_pressed(move |_, key, _, modifiers| {
+            if readline.borrow_mut().handle_key(
+                &input_for_handler,
+                key,
+                modifiers,
+                history.borrow().entries(),
+            ) {
+                return glib::Propagation::Stop;
+            }
+
+            match key {
+                gdk::Key::Escape => {
+                    if input_for_handler.text().is_empty() {
+                        app.quit();
+                    } else {
+                        input_for_handler.set_text("");
+                    }
+                    glib::Propagation::Stop
                 }
-                glib::Propagation::Stop
-            }
-            gdk::Key::Return | gdk::Key::KP_Enter => {
-                if let Some(item) = selected_item(&state, &list) {
-                    activate(&item);
+                gdk::Key::Return | gdk::Key::KP_Enter => {
+                    if let Some(item) = selected_item(&state, &list) {
+                        activate(&item);
+                    }
+                    glib::Propagation::Stop
                 }
-                glib::Propagation::Stop
+                gdk::Key::Down => {
+                    move_selection(&list, 1);
+                    glib::Propagation::Stop
+                }
+                gdk::Key::Up => {
+                    move_selection(&list, -1);
+                    glib::Propagation::Stop
+                }
+                _ => glib::Propagation::Proceed,
             }
-            gdk::Key::Down => {
-                move_selection(&list, 1);
-                glib::Propagation::Stop
-            }
-            gdk::Key::Up => {
-                move_selection(&list, -1);
-                glib::Propagation::Stop
-            }
-            _ => glib::Propagation::Proceed,
         });
         input.add_controller(key);
     }

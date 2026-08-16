@@ -12,6 +12,8 @@ All notable changes to Spotter are documented in this file.
   an icon is unavailable.
 - Persistent, deduplicated recent searches shown newest-first when the search
   input is empty.
+- GNU Readline-style cursor movement, deletion, kill/yank, transpose, and
+  recent-history keyboard commands in the search input.
 
 ### Fixed
 

@@ -11,6 +11,7 @@ A fast application launcher for Linux, written in Rust.
 - Indexes configured home folders and supports absolute paths.
 - Parallel fuzzy search with a small bounded result list for responsive typing.
 - Persists recent searches and shows them newest-first when the input is empty.
+- Supports GNU Readline-style input editing and recent-history navigation.
 - Opens apps, shell commands, files, and directories with `Enter`.
 - Loads configuration from `~/.config/spotter/config.toml`.
 
@@ -100,3 +101,6 @@ Examples:
 The first launch builds the in-memory index on a background thread. Application
 and command results are published first, followed by filesystem entries. An
 active query refreshes automatically as each indexing stage completes.
+
+Common editing shortcuts include `Ctrl+A/E/B/F`, `Alt+B/F`, `Ctrl+H/D`,
+`Ctrl+W/U/K/Y/T`, `Alt+D/Backspace`, and `Ctrl+P/N` for older/newer queries.

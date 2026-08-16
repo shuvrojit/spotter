@@ -2,6 +2,7 @@ mod ai;
 mod config;
 mod history;
 mod platform;
+mod readline;
 mod search;
 mod ui;
 
