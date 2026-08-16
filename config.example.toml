@@ -1,0 +1,74 @@
+# Spotter configuration
+
+# Search/index settings. Integers must be unquoted decimal values.
+max_results = 9
+max_recent_searches = 8 # 0 disables history; maximum 50.
+max_result_height = 420 # Legacy fallback for ui.result_max_height.
+max_indexed_items = 60000
+index_depth = 5
+include_hidden = false
+
+# Relative entries are resolved from the home directory. Absolute and ~/ paths
+# are also accepted.
+index_dirs = [
+  "Desktop",
+  "Documents",
+  "Downloads",
+  "Pictures",
+  "Music",
+  "Videos",
+]
+
+[ai]
+# Any OpenAI-compatible /chat/completions API can be used.
+base_url = "https://api.openai.com/v1"
+api_key = "" # Prefer the OPENAI_API_KEY environment variable.
+model = "gpt-4o-mini"
+
+[ui]
+# Supported values: top-left, top-center, top-right, center-left, center,
+# center-right, bottom-left, bottom-center, bottom-right, custom.
+# Anchored positions are supported on Sway. Other Wayland compositors decide
+# placement unless they provide a compatible positioning API.
+position = "top-left"
+
+# For edge anchors, x/y are inward margins. For center anchors, they are signed
+# offsets from center. For custom, they are absolute desktop coordinates.
+x = 96
+y = 72
+
+# Width is the exact Sway window width (minimum 320). Height grows naturally:
+# search_height controls the input and result_max_height caps the result pane.
+window_width = 720
+result_max_height = 420
+
+# Layout values are pixels. Accepted ranges are documented beside each value.
+shell_margin = 24          # 0..96
+shell_padding = 18         # 0..96
+shell_radius = 18          # 0..48; also clips the outer window corners
+search_height = 54         # 36..120
+search_radius = 12         # 0..48
+search_font_size = 24      # 12..48
+result_margin_top = 12     # 0..64
+result_row_padding_y = 10  # 2..48
+result_row_padding_x = 14  # 2..48
+result_row_radius = 10     # 0..32
+title_font_size = 16       # 10..36
+subtitle_font_size = 12    # 8..28
+icon_font_size = 20        # 10..36; pixel size for app icons
+
+[ui.colors]
+# GTK CSS colors are accepted: named colors ("black", "transparent"), hex
+# ("#RRGGBB" or "#RRGGBBAA"), rgb(), and rgba(). Alpha colors blend with the
+# layer beneath them; use opaque colors when an exact visible color is needed.
+window_background = "transparent"
+shell_background = "rgba(28, 31, 36, 0.96)"
+shell_border = "rgba(255, 255, 255, 0.14)"
+search_background = "rgba(255, 255, 255, 0.10)"
+search_text = "#f5f7fa"
+results_background = "transparent"
+row_background = "transparent"
+row_selected_background = "rgba(108, 160, 255, 0.28)"
+icon = "#9fb7ff"
+title = "#f5f7fa"
+subtitle = "#aeb6c2"

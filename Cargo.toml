@@ -7,10 +7,6 @@ edition = "2021"
 name = "spotter"
 path = "src/main.rs"
 
-[[bin]]
-name = "spotlight-l"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = "1.0"
 async-channel = "2.3"

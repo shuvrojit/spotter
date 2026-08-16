@@ -1,14 +1,17 @@
 # Spotter
 
-A fast Spotlight-style launcher for Linux, written in Rust.
+A fast application launcher for Linux, written in Rust.
 
 ## Features
 
 - Native GTK command palette UI.
 - Searches installed desktop apps from `.desktop` files.
+- Shows each application's original themed or file-based icon when available.
 - Searches executable commands from `PATH`.
 - Indexes configured home folders and supports absolute paths.
 - Parallel fuzzy search with a small bounded result list for responsive typing.
+- Persists recent searches and shows them newest-first when the input is empty.
+- Supports GNU Readline-style input editing and recent-history navigation.
 - Opens apps, shell commands, files, and directories with `Enter`.
 - Loads configuration from `~/.config/spotter/config.toml`.
 
@@ -21,7 +24,7 @@ cargo run --release
 ## Build
 
 ```sh
-cargo build --release
+make
 ```
 
 The binary is created at:
@@ -29,6 +32,25 @@ The binary is created at:
 ```sh
 target/release/spotter
 ```
+
+You can also build it directly with `cargo build --release --bin spotter`.
+
+## Install
+
+Install system-wide under `/usr/local/bin`:
+
+```sh
+sudo make install
+```
+
+For a per-user installation, use:
+
+```sh
+make install PREFIX="$HOME/.local"
+```
+
+`PREFIX`, `BINDIR`, and `DESTDIR` can be overridden for packaging or custom
+installation layouts.
 
 ## Configuration
 
@@ -38,75 +60,47 @@ Spotter creates this file on first launch:
 ~/.config/spotter/config.toml
 ```
 
-Default config:
+The annotated [config.example.toml](config.example.toml) is also compiled into
+the binary as the first-launch default. Copy it to start from a fresh config:
 
-```toml
-max_results = 9
-max_result_height = 420
-max_indexed_items = 60000
-index_depth = 5
-include_hidden = false
-
-index_dirs = [
-  "Desktop",
-  "Documents",
-  "Downloads",
-  "Pictures",
-  "Music",
-  "Videos",
-]
-
-[ui]
-position = "top-left"
-x = 96
-y = 72
-window_width = 720
-result_max_height = 420
-shell_margin = 24
-shell_padding = 18
-shell_radius = 18
-search_height = 54
-search_radius = 12
-search_font_size = 24
-result_margin_top = 12
-result_row_padding_y = 10
-result_row_padding_x = 14
-result_row_radius = 10
-title_font_size = 16
-subtitle_font_size = 12
-icon_font_size = 20
-
-[ui.colors]
-window_background = "transparent"
-shell_background = "rgba(28, 31, 36, 0.96)"
-shell_border = "rgba(255, 255, 255, 0.14)"
-search_background = "rgba(255, 255, 255, 0.1)"
-search_text = "#f5f7fa"
-results_background = "transparent"
-row_background = "transparent"
-row_selected_background = "rgba(108, 160, 255, 0.28)"
-icon = "#9fb7ff"
-title = "#f5f7fa"
-subtitle = "#aeb6c2"
+```sh
+mkdir -p "$HOME/.config/spotter"
+cp config.example.toml "$HOME/.config/spotter/config.toml"
 ```
 
-`index_dirs` accepts paths relative to your home directory, `~/...` paths, or absolute paths.
-`position`, `x`, and `y` store the preferred placement. On Sway, Spotter uses `swaymsg` to make the launcher floating and move it to the configured coordinates. Other Wayland compositors may ignore exact placement unless they expose a compositor-specific positioning command.
+Sway supports all documented anchors, including `top-right`, and applies
+`window_width` exactly. The result pane grows naturally up to
+`result_max_height`. Other Wayland compositors control placement unless they
+provide a compatible positioning API.
+
+Invalid TOML cannot be applied. Spotter shows the parse error in the launcher
+and uses defaults until the file is corrected. Restart Spotter after editing
+configuration values.
+
+Set `max_recent_searches` to control how many queries are retained, or set it
+to `0` to disable search history. History is stored locally at
+`~/.local/share/spotter/recent-searches.json` by default. Selecting a recent
+query restores it so you can review the results before launching anything.
 
 ## Global Shortcut
 
 On Linux, global shortcuts are desktop-environment specific, especially under Wayland. Bind your preferred shortcut to:
 
 ```sh
-/home/shuv40/Desktop/startups/spotlight-l/target/release/spotter
+spotter
 ```
 
 Examples:
 
 - GNOME: Settings -> Keyboard -> View and Customize Shortcuts -> Custom Shortcuts.
 - KDE Plasma: System Settings -> Shortcuts -> Custom Shortcuts.
-- i3/sway: bind a key to `exec /home/shuv40/Desktop/startups/spotlight-l/target/release/spotter`.
+- i3/sway: bind a key to `exec spotter`.
 
 ## Notes
 
-The first launch builds the in-memory index on a background thread. Search is available immediately and results fill in as indexing completes.
+The first launch builds the in-memory index on a background thread. Application
+and command results are published first, followed by filesystem entries. An
+active query refreshes automatically as each indexing stage completes.
+
+Common editing shortcuts include `Ctrl+A/E/B/F`, `Alt+B/F`, `Ctrl+H/D`,
+`Ctrl+W/U/K/Y/T`, `Alt+D/Backspace`, and `Ctrl+P/N` for older/newer queries.

@@ -2,6 +2,43 @@
 
 All notable changes to Spotter are documented in this file.
 
+## [Unreleased]
+
+## [v0.2] - 2026-08-16
+
+### Added
+
+- Make targets for release builds and configurable installation paths.
+- Annotated `config.example.toml` with supported UI values and color formats.
+- Original application icons from desktop entries, with a glyph fallback when
+  an icon is unavailable.
+- Persistent, deduplicated recent searches shown newest-first when the search
+  input is empty.
+- GNU Readline-style cursor movement, deletion, kill/yank, transpose, and
+  recent-history keyboard commands in the search input.
+
+### Fixed
+
+- Publish application and command indexes before filesystem scanning completes,
+  and refresh an active query automatically instead of showing a premature web
+  fallback.
+- Apply anchored Sway positions, exact configured width, and updated placement
+  after the result pane changes height.
+- Prevent GTK theme backgrounds from overriding configured UI colors.
+- Clip the GTK window to the configured shell radius to remove square corner
+  residue around the launcher.
+- Show malformed configuration errors in the launcher instead of silently
+  ignoring the entire file.
+
+### Changed
+
+- Split the application into focused configuration, search, AI, platform, and
+  GTK UI modules.
+
+### Removed
+
+- Multiple build name references
+
 ## [v0.1] - 2026-08-12
 
 ### Added
