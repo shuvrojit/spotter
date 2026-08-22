@@ -62,7 +62,7 @@ pub(crate) fn spawn_indexer(
         let started = Instant::now();
         let mut items = Vec::new();
         items.extend(read_desktop_apps());
-        items.extend(read_path_commands());
+        items.extend(read_configured_path_commands(&config));
         let mut seen = HashSet::new();
         items.retain(|item| seen.insert((item.kind.clone(), item.target.clone())));
 
@@ -337,6 +337,14 @@ fn read_path_commands() -> Vec<SearchItem> {
         .unwrap_or_default()
 }
 
+fn read_configured_path_commands(config: &Config) -> Vec<SearchItem> {
+    if config.include_path_binaries {
+        read_path_commands()
+    } else {
+        Vec::new()
+    }
+}
+
 fn command_item(path: PathBuf) -> Option<SearchItem> {
     let metadata = fs::metadata(&path).ok()?;
     if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
@@ -464,6 +472,11 @@ mod tests {
         let without_icon =
             parse_desktop_item("[Desktop Entry]\nName=No Icon\nExec=no-icon\n").unwrap();
         assert_eq!(without_icon.desktop_icon, None);
+    }
+
+    #[test]
+    fn path_binaries_are_excluded_by_default() {
+        assert!(read_configured_path_commands(&Config::default()).is_empty());
     }
 
     #[test]

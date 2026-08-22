@@ -8,6 +8,13 @@ All notable changes to Spotter are documented in this file.
 
 - Optional StatusNotifierItem system tray mode with a search icon, click-to-open
   behavior, and Open/Quit menu actions.
+- An `include_path_binaries` option for indexing executable files from `PATH`,
+  disabled by default.
+
+### Fixed
+
+- Prevent the launcher from briefly appearing at the compositor's default
+  position before moving to its configured Sway position.
 
 ## [v0.2] - 2026-08-16
 

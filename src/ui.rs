@@ -103,6 +103,7 @@ pub(crate) fn build(app: &Application) {
     root.append(&input);
     root.append(&scroll);
     window.set_child(Some(&root));
+    platform::configure_positioning(&window, config.ui.clone());
 
     let tray_runtime = if config.system_tray {
         let (events, receiver) = async_channel::unbounded();
@@ -295,10 +296,9 @@ pub(crate) fn build(app: &Application) {
         window.add_controller(key);
     }
 
-    window.present();
-    platform::schedule_position(&window, config.ui.clone());
+    platform::present(&window);
     if let Some((service, events)) = tray_runtime {
-        listen_for_tray_events(app, &window, &input, config.ui.clone(), service, events);
+        listen_for_tray_events(app, &window, &input, service, events);
     }
     let updates = search::spawn_indexer(index, config);
     {
@@ -320,7 +320,6 @@ fn listen_for_tray_events(
     app: &Application,
     window: &ApplicationWindow,
     input: &SearchEntry,
-    ui: UiConfig,
     service: tray::Service,
     events: async_channel::Receiver<tray::Event>,
 ) {
@@ -334,8 +333,7 @@ fn listen_for_tray_events(
         while let Ok(event) = events.recv().await {
             match event {
                 tray::Event::Open => {
-                    window.present();
-                    platform::schedule_position(&window, ui.clone());
+                    platform::present(&window);
                     input.grab_focus();
                 }
                 tray::Event::Quit => {

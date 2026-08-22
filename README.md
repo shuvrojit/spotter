@@ -7,7 +7,7 @@ A fast application launcher for Linux, written in Rust.
 - Native GTK command palette UI.
 - Searches installed desktop apps from `.desktop` files.
 - Shows each application's original themed or file-based icon when available.
-- Searches executable commands from `PATH`.
+- Optionally searches executable commands from `PATH`.
 - Indexes configured home folders and supports absolute paths.
 - Parallel fuzzy search with a small bounded result list for responsive typing.
 - Persists recent searches and shows them newest-first when the input is empty.
@@ -89,6 +89,10 @@ to `0` to disable search history. History is stored locally at
 `~/.local/share/spotter/recent-searches.json` by default. Selecting a recent
 query restores it so you can review the results before launching anything.
 
+Set `include_path_binaries = true` to index executable files found in `PATH`.
+It defaults to `false`, so command binaries are excluded unless explicitly
+enabled.
+
 Set `system_tray = true` to keep Spotter running after its window is hidden.
 Clicking the search icon presents the launcher again; its context menu also
 offers Open and Quit actions. A StatusNotifierItem-compatible tray host is
@@ -111,8 +115,9 @@ Examples:
 ## Notes
 
 The first launch builds the in-memory index on a background thread. Application
-and command results are published first, followed by filesystem entries. An
-active query refreshes automatically as each indexing stage completes.
+results, plus optional `PATH` commands, are published first, followed by
+filesystem entries. An active query refreshes automatically as each indexing
+stage completes.
 
 Common editing shortcuts include `Ctrl+A/E/B/F`, `Alt+B/F`, `Ctrl+H/D`,
 `Ctrl+W/U/K/Y/T`, `Alt+D/Backspace`, and `Ctrl+P/N` for older/newer queries.

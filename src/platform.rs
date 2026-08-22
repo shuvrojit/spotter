@@ -1,8 +1,11 @@
 use crate::{config::UiConfig, config::WindowPosition, APP_ID};
 use anyhow::{Context, Result};
-use gtk::{glib, prelude::*, ApplicationWindow};
+use gtk::{glib, prelude::*, ApplicationWindow, Window};
 use serde::Deserialize;
 use std::{env, fs, os::unix::fs::PermissionsExt, process::Command, time::Duration};
+
+const POSITION_FALLBACK_DELAY: Duration = Duration::from_millis(30);
+const PREPOSITION_OPACITY: f64 = 0.01;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 struct SwayRect {
@@ -24,13 +27,56 @@ struct SwayCommandResult {
     error: Option<String>,
 }
 
-pub(crate) fn schedule_position(window: &ApplicationWindow, ui: UiConfig) {
-    for attempt in 1..=4 {
+pub(crate) fn present(window: &(impl IsA<Window> + IsA<gtk::Widget>)) {
+    if !window.is_mapped() && sway_positioning_available() {
+        // GTK skips committing fully transparent widgets, which prevents Sway
+        // from matching the surface. A near-transparent frame keeps it
+        // imperceptible while allowing compositor-side positioning.
+        window.set_opacity(PREPOSITION_OPACITY);
+    }
+    window.present();
+}
+
+pub(crate) fn configure_positioning(window: &ApplicationWindow, ui: UiConfig) {
+    if !sway_positioning_available() {
+        return;
+    }
+
+    {
+        let ui = ui.clone();
+        window.connect_realize(move |window| {
+            let Some(surface) = window.surface() else {
+                return;
+            };
+            let window = window.clone();
+            let ui = ui.clone();
+            surface.connect_layout(move |_, _, _| {
+                if window.opacity() < 1.0 {
+                    reveal_at_configured_position(&window, &ui, false);
+                }
+            });
+        });
+    }
+
+    window.connect_map(move |window| {
         let window = window.clone();
         let ui = ui.clone();
-        glib::timeout_add_local_once(Duration::from_millis(120 * attempt), move || {
-            apply_position(&window, &ui)
+        glib::timeout_add_local_once(POSITION_FALLBACK_DELAY, move || {
+            if window.opacity() < 1.0 {
+                reveal_at_configured_position(&window, &ui, true);
+            }
         });
+    });
+}
+
+fn reveal_at_configured_position(window: &ApplicationWindow, ui: &UiConfig, reveal_on_error: bool) {
+    match position_with_sway(window, ui) {
+        Ok(()) => window.set_opacity(1.0),
+        Err(error) if reveal_on_error => {
+            eprintln!("failed to position window with swaymsg: {error:#}");
+            window.set_opacity(1.0);
+        }
+        Err(_) => {}
     }
 }
 
@@ -42,13 +88,21 @@ pub(crate) fn schedule_reposition(window: &ApplicationWindow, ui: UiConfig) {
 }
 
 fn apply_position(window: &ApplicationWindow, ui: &UiConfig) {
-    if env::var_os("SWAYSOCK").is_some() && command_exists("swaymsg") {
+    if sway_positioning_available() {
         if let Err(error) = position_with_sway(window, ui) {
             eprintln!("failed to position window with swaymsg: {error:#}");
         }
         return;
     }
 
+    log_unsupported_position(ui);
+}
+
+fn sway_positioning_available() -> bool {
+    env::var_os("SWAYSOCK").is_some() && command_exists("swaymsg")
+}
+
+fn log_unsupported_position(ui: &UiConfig) {
     eprintln!(
         "window position `{}` requested, but no supported positioning backend is available",
         ui.position
@@ -72,18 +126,15 @@ fn position_with_sway(window: &ApplicationWindow, ui: &UiConfig) -> Result<()> {
         )
     };
 
-    let command = format!(
-        r#"[app_id="{APP_ID}"] floating enable, resize set width {} px, move absolute position {} px {} px"#,
-        ui.window_width, x, y
-    );
+    let command = sway_position_command(std::process::id(), ui.window_width, x, y);
 
     let output = Command::new("swaymsg")
-        .arg(command)
+        .arg(&command)
         .output()
         .context("run swaymsg window command")?;
     if !output.status.success() {
         anyhow::bail!(
-            "swaymsg window command exited with {}: {}",
+            "swaymsg window command `{command}` exited with {}: {}",
             output.status,
             String::from_utf8_lossy(&output.stderr).trim()
         );
@@ -98,6 +149,12 @@ fn position_with_sway(window: &ApplicationWindow, ui: &UiConfig) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn sway_position_command(pid: u32, width: i32, x: i32, y: i32) -> String {
+    format!(
+        r#"[app_id="{APP_ID}" pid="{pid}"] floating enable, resize set width {width} px, move absolute position {x} px {y} px"#
+    )
 }
 
 fn focused_sway_workspace() -> Result<SwayRect> {
@@ -198,6 +255,14 @@ mod tests {
         assert_eq!(
             calculate_window_position(WindowPosition::Custom, workspace, 720, 100, -800, 50),
             (-800, 50)
+        );
+    }
+
+    #[test]
+    fn sway_positioning_targets_only_the_current_process() {
+        assert_eq!(
+            sway_position_command(42, 720, 96, 72),
+            r#"[app_id="dev.spotter.Launcher" pid="42"] floating enable, resize set width 720 px, move absolute position 96 px 72 px"#
         );
     }
 }

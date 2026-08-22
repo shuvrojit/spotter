@@ -41,6 +41,8 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) include_hidden: bool,
     #[serde(default)]
+    pub(crate) include_path_binaries: bool,
+    #[serde(default)]
     pub(crate) system_tray: bool,
     #[serde(default = "default_index_dirs")]
     pub(crate) index_dirs: Vec<String>,
@@ -59,6 +61,7 @@ impl Default for Config {
             max_indexed_items: default_max_indexed_items(),
             index_depth: default_index_depth(),
             include_hidden: false,
+            include_path_binaries: false,
             system_tray: false,
             index_dirs: default_index_dirs(),
             ai: AiConfig::default(),
@@ -526,6 +529,7 @@ mod tests {
         assert_eq!(config.ui.window_width, 720);
         assert_eq!(config.ui.search_height, 54);
         assert_eq!(config.max_recent_searches, 8);
+        assert!(!config.include_path_binaries);
         assert!(!config.system_tray);
     }
 
@@ -564,6 +568,12 @@ mod tests {
     fn system_tray_can_be_enabled() {
         let config: Config = toml::from_str("system_tray = true").unwrap();
         assert!(config.system_tray);
+    }
+
+    #[test]
+    fn path_binaries_can_be_enabled() {
+        let config: Config = toml::from_str("include_path_binaries = true").unwrap();
+        assert!(config.include_path_binaries);
     }
 
     #[test]

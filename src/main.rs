@@ -16,7 +16,7 @@ fn main() {
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(|app| {
         if let Some(window) = app.windows().first() {
-            window.present();
+            platform::present(window);
         } else {
             ui::build(app);
         }
