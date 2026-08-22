@@ -12,7 +12,8 @@ A fast application launcher for Linux, written in Rust.
 - Parallel fuzzy search with a small bounded result list for responsive typing.
 - Shows recently launched apps and web searches when the input is empty.
 - Persists query history for GNU Readline-style editing and navigation.
-- Optionally stays available through a search-style system tray icon.
+- Optionally stays available through a search-style system tray icon with a
+  mouse-driven settings window.
 - Supports single-click mouse activation alongside keyboard navigation.
 - Opens apps, shell commands, files, and directories with `Enter`.
 - Loads configuration from `~/.config/spotter/config.toml`.
@@ -85,6 +86,13 @@ Invalid TOML cannot be applied. Spotter shows the parse error in the launcher
 and uses defaults until the file is corrected. Restart Spotter after editing
 configuration values.
 
+When system tray mode is enabled, choose **Settings** from the tray icon menu
+to edit every configuration value with native controls. The General,
+Interface, Colors, and AI tabs provide switches, number controls, a position
+selector, directory editor, color pickers, and text fields. Choose **Save** and
+restart Spotter to apply the changes. The configuration file is written with
+user-only permissions because it can contain an API key.
+
 Set `max_recent_items` to control how many launched apps and web searches are
 shown when the input is empty, or set it to `0` to disable the recent list.
 Web entries are explicitly tagged as web searches. The list is stored at
@@ -100,8 +108,8 @@ enabled.
 
 Set `system_tray = true` to keep Spotter running after its window is hidden.
 Clicking the search icon presents the launcher again; its context menu also
-offers Open and Quit actions. A StatusNotifierItem-compatible tray host is
-required.
+offers Open, Settings, and Quit actions. A StatusNotifierItem-compatible tray
+host is required.
 
 ## Global Shortcut
 

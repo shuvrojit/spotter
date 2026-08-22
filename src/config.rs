@@ -1,7 +1,14 @@
 use anyhow::{Context, Result};
 use gtk::gdk;
 use serde::{Deserialize, Serialize};
-use std::{env, fs};
+use std::{
+    env, fs,
+    fs::{OpenOptions, Permissions},
+    io::Write,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const CONFIG_DIR_NAME: &str = "spotter";
 const CONFIG_FILE_NAME: &str = "config.toml";
@@ -36,7 +43,7 @@ pub(crate) struct Config {
     #[serde(default = "default_max_recent_items")]
     pub(crate) max_recent_items: usize,
     #[serde(default = "default_max_result_height")]
-    max_result_height: i32,
+    pub(crate) max_result_height: i32,
     #[serde(default = "default_max_indexed_items")]
     pub(crate) max_indexed_items: usize,
     #[serde(default = "default_index_depth")]
@@ -275,17 +282,18 @@ impl WindowPosition {
 }
 
 pub(crate) fn load() -> Result<Config> {
-    let config_dir = dirs::config_dir()
-        .or_else(|| dirs::home_dir().map(|home| home.join(".config")))
-        .context("could not resolve config directory")?
-        .join(CONFIG_DIR_NAME);
-    let config_path = config_dir.join(CONFIG_FILE_NAME);
+    let config_path = config_path()?;
+    let config_dir = config_path
+        .parent()
+        .context("configuration path has no parent directory")?;
 
     if !config_path.exists() {
-        fs::create_dir_all(&config_dir)
+        fs::create_dir_all(config_dir)
             .with_context(|| format!("create {}", config_dir.display()))?;
         fs::write(&config_path, DEFAULT_CONFIG)
             .with_context(|| format!("write {}", config_path.display()))?;
+        fs::set_permissions(&config_path, Permissions::from_mode(0o600))
+            .with_context(|| format!("set permissions on {}", config_path.display()))?;
     }
 
     let content = fs::read_to_string(&config_path)
@@ -294,6 +302,54 @@ pub(crate) fn load() -> Result<Config> {
         toml::from_str(&content).with_context(|| format!("parse {}", config_path.display()))?;
     config.sanitize();
     Ok(config)
+}
+
+pub(crate) fn save(config: &Config) -> Result<()> {
+    save_to(&config_path()?, config)
+}
+
+fn config_path() -> Result<PathBuf> {
+    Ok(dirs::config_dir()
+        .or_else(|| dirs::home_dir().map(|home| home.join(".config")))
+        .context("could not resolve config directory")?
+        .join(CONFIG_DIR_NAME)
+        .join(CONFIG_FILE_NAME))
+}
+
+fn save_to(path: &Path, config: &Config) -> Result<()> {
+    let mut config = config.clone();
+    config.sanitize();
+    let content = toml::to_string_pretty(&config).context("serialize configuration")?;
+    let parent = path
+        .parent()
+        .with_context(|| format!("configuration path has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+
+    let mut temp_name = path.file_name().unwrap_or_default().to_os_string();
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before the Unix epoch")?
+        .as_nanos();
+    temp_name.push(format!(".{}.{unique}.tmp", std::process::id()));
+    let temp_path = path.with_file_name(temp_name);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&temp_path)
+        .with_context(|| format!("create {}", temp_path.display()))?;
+    let result = (|| {
+        file.write_all(content.as_bytes())
+            .with_context(|| format!("write {}", temp_path.display()))?;
+        file.sync_all()
+            .with_context(|| format!("sync {}", temp_path.display()))?;
+        drop(file);
+        fs::rename(&temp_path, path).with_context(|| format!("replace {}", path.display()))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    result
 }
 
 impl Config {
@@ -530,6 +586,17 @@ fn default_subtitle_color() -> String {
 mod tests {
     use super::*;
 
+    fn test_config_path(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "spotter-config-test-{}-{unique}-{name}.toml",
+            std::process::id()
+        ))
+    }
+
     #[test]
     fn example_config_is_valid() {
         let mut config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
@@ -541,6 +608,33 @@ mod tests {
         assert_eq!(config.max_recent_items, 8);
         assert!(!config.include_path_binaries);
         assert!(!config.system_tray);
+    }
+
+    #[test]
+    fn save_round_trips_a_sanitized_private_config() {
+        let path = test_config_path("save");
+        let config = Config {
+            max_recent_items: 99,
+            index_dirs: Vec::new(),
+            ui: UiConfig {
+                window_width: 100,
+                ..UiConfig::default()
+            },
+            ..Config::default()
+        };
+
+        save_to(&path, &config).unwrap();
+
+        let saved: Config = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved.max_recent_items, 50);
+        assert_eq!(saved.ui.window_width, 320);
+        assert_eq!(saved.index_dirs, default_index_dirs());
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

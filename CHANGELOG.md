@@ -7,7 +7,9 @@ All notable changes to Spotter are documented in this file.
 ### Added
 
 - Optional StatusNotifierItem system tray mode with a search icon, click-to-open
-  behavior, and Open/Quit menu actions.
+  behavior, and Open/Settings/Quit menu actions.
+- A floating, mouse-driven settings window for editing and privately saving all
+  General, Interface, Colors, and AI configuration values.
 - An `include_path_binaries` option for indexing executable files from `PATH`,
   disabled by default.
 - Single-click mouse activation for launcher result rows.

@@ -9,6 +9,7 @@ const MATERIAL_ICON_SIZES: [i32; 4] = [16, 22, 32, 48];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Event {
     Open,
+    Settings,
     Quit,
 }
 
@@ -57,6 +58,13 @@ impl Tray for SpotterTray {
                 label: "Open Spotter".to_string(),
                 icon_name: "system-search".to_string(),
                 activate: Box::new(|tray: &mut Self| tray.send(Event::Open)),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Settings".to_string(),
+                icon_name: "preferences-system".to_string(),
+                activate: Box::new(|tray: &mut Self| tray.send(Event::Settings)),
                 ..Default::default()
             }
             .into(),
@@ -145,13 +153,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn activation_sends_open_event() {
+    fn activation_and_settings_menu_send_events() {
         let (sender, receiver) = async_channel::bounded(1);
         let mut tray = SpotterTray { events: sender };
 
         tray.activate(0, 0);
 
         assert_eq!(receiver.try_recv().unwrap(), Event::Open);
+        let mut menu = tray.menu();
+        let MenuItem::Standard(settings) = menu.remove(1) else {
+            panic!("Settings should be a standard tray menu item");
+        };
+        assert_eq!(settings.label, "Settings");
+        (settings.activate)(&mut tray);
+        assert_eq!(receiver.try_recv().unwrap(), Event::Settings);
     }
 
     #[test]

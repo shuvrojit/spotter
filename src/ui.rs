@@ -5,7 +5,7 @@ use crate::{
     platform,
     readline::ReadlineEditor,
     search::{self, ItemKind, RecentItem, SearchItem, SearchResult},
-    tray, PRODUCT_NAME,
+    settings, tray, PRODUCT_NAME,
 };
 use anyhow::Result;
 use gtk::gdk;
@@ -60,6 +60,7 @@ pub(crate) fn build(app: &Application) {
         .resizable(false)
         .decorated(false)
         .build();
+    window.set_widget_name("launcher-window");
     window.set_size_request(config.ui.window_width, -1);
     window.set_overflow(gtk::Overflow::Hidden);
 
@@ -350,6 +351,7 @@ fn listen_for_tray_events(
                     platform::present(&window);
                     input.grab_focus();
                 }
+                tray::Event::Settings => settings::present(&app, &window),
                 tray::Event::Quit => {
                     app.quit();
                     break;
@@ -539,7 +541,7 @@ fn launch(item: &SearchItem) -> Result<()> {
 fn build_style(ui: &UiConfig) -> String {
     format!(
         r#"
-window {{
+#launcher-window {{
   background-color: {};
   background-image: none;
   border-radius: {}px;

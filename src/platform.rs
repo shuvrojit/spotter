@@ -1,4 +1,4 @@
-use crate::{config::UiConfig, config::WindowPosition, APP_ID};
+use crate::{config::UiConfig, config::WindowPosition, APP_ID, PRODUCT_NAME};
 use anyhow::{Context, Result};
 use gtk::{glib, prelude::*, ApplicationWindow, Window};
 use serde::Deserialize;
@@ -153,7 +153,7 @@ fn position_with_sway(window: &ApplicationWindow, ui: &UiConfig) -> Result<()> {
 
 fn sway_position_command(pid: u32, width: i32, x: i32, y: i32) -> String {
     format!(
-        r#"[app_id="{APP_ID}" pid="{pid}"] floating enable, resize set width {width} px, move absolute position {x} px {y} px"#
+        r#"[app_id="{APP_ID}" title="^{PRODUCT_NAME}$" pid="{pid}"] floating enable, resize set width {width} px, move absolute position {x} px {y} px"#
     )
 }
 
@@ -262,7 +262,7 @@ mod tests {
     fn sway_positioning_targets_only_the_current_process() {
         assert_eq!(
             sway_position_command(42, 720, 96, 72),
-            r#"[app_id="dev.spotter.Launcher" pid="42"] floating enable, resize set width 720 px, move absolute position 96 px 72 px"#
+            r#"[app_id="dev.spotter.Launcher" title="^Spotter$" pid="42"] floating enable, resize set width 720 px, move absolute position 96 px 72 px"#
         );
     }
 }
