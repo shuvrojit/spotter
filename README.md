@@ -13,6 +13,7 @@ A fast application launcher for Linux, written in Rust.
 - Shows recently launched apps and web searches when the input is empty.
 - Persists query history for GNU Readline-style editing and navigation.
 - Optionally stays available through a search-style system tray icon.
+- Supports single-click mouse activation alongside keyboard navigation.
 - Opens apps, shell commands, files, and directories with `Enter`.
 - Loads configuration from `~/.config/spotter/config.toml`.
 

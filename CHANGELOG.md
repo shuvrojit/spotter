@@ -10,6 +10,7 @@ All notable changes to Spotter are documented in this file.
   behavior, and Open/Quit menu actions.
 - An `include_path_binaries` option for indexing executable files from `PATH`,
   disabled by default.
+- Single-click mouse activation for launcher result rows.
 
 ### Fixed
 

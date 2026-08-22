@@ -85,6 +85,7 @@ pub(crate) fn build(app: &Application) {
     let list = ListBox::new();
     list.set_widget_name("results");
     list.set_selection_mode(gtk::SelectionMode::Single);
+    list.set_activate_on_single_click(true);
 
     let response = Label::new(None);
     response.set_widget_name("response");
@@ -185,6 +186,16 @@ pub(crate) fn build(app: &Application) {
         })
     };
 
+    {
+        let state = state.clone();
+        let activate = activate.clone();
+        list.connect_row_activated(move |_, row| {
+            if let Some(item) = item_at_index(&state, row.index()) {
+                activate(&item);
+            }
+        });
+    }
+
     let refresh: Rc<dyn Fn(&str)> = {
         let list = list.clone();
         let scroll = scroll.clone();
@@ -283,17 +294,9 @@ pub(crate) fn build(app: &Application) {
     }
 
     {
-        let state = state.clone();
         let list = list.clone();
-        let activate = activate.clone();
         let key = EventControllerKey::new();
         key.connect_key_pressed(move |_, key, _, _| match key {
-            gdk::Key::Return | gdk::Key::KP_Enter => {
-                if let Some(item) = selected_item(&state, &list) {
-                    activate(&item);
-                }
-                glib::Propagation::Stop
-            }
             gdk::Key::Down => {
                 move_selection(&list, 1);
                 glib::Propagation::Stop
@@ -500,12 +503,17 @@ fn move_selection(list: &ListBox, delta: i32) {
 fn selected_item(state: &Arc<RwLock<Vec<SearchResult>>>, list: &ListBox) -> Option<SearchItem> {
     let selected = list
         .selected_row()
-        .map(|row| row.index() as usize)
+        .map(|row| row.index())
         .unwrap_or_default();
+    item_at_index(state, selected)
+}
+
+fn item_at_index(state: &Arc<RwLock<Vec<SearchResult>>>, index: i32) -> Option<SearchItem> {
+    let index = usize::try_from(index).ok()?;
     state
         .read()
         .ok()
-        .and_then(|results| results.get(selected).cloned())
+        .and_then(|results| results.get(index).cloned())
         .map(|result| result.item)
 }
 
