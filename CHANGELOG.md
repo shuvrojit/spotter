@@ -16,6 +16,13 @@ All notable changes to Spotter are documented in this file.
 - Prevent the launcher from briefly appearing at the compositor's default
   position before moving to its configured Sway position.
 
+### Changed
+
+- Show recently launched applications instead of query strings when the input
+  is empty, while retaining query history for Readline navigation.
+- Keep launched web fallbacks in the recent list with an explicit web-search
+  label.
+
 ## [v0.2] - 2026-08-16
 
 ### Added

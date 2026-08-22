@@ -1,10 +1,10 @@
 use crate::{
     ai,
     config::{self, Config, UiConfig},
-    history::RecentSearches,
+    history::{RecentItems, RecentSearches},
     platform,
     readline::ReadlineEditor,
-    search::{self, ItemKind, SearchItem, SearchResult},
+    search::{self, ItemKind, RecentItem, SearchItem, SearchResult},
     tray, PRODUCT_NAME,
 };
 use anyhow::Result;
@@ -33,14 +33,22 @@ pub(crate) fn build(app: &Application) {
             (Config::default(), Some(message))
         }
     };
-    let history = match RecentSearches::load(config.max_recent_searches) {
+    let search_history = match RecentSearches::load(config.max_recent_searches) {
         Ok(history) => history,
         Err(error) => {
             eprintln!("failed to load recent searches: {error:#}");
             RecentSearches::empty(config.max_recent_searches)
         }
     };
-    let history = Rc::new(RefCell::new(history));
+    let recent_items = match RecentItems::load(config.max_recent_items) {
+        Ok(items) => items,
+        Err(error) => {
+            eprintln!("failed to load recent items: {error:#}");
+            RecentItems::empty(config.max_recent_items)
+        }
+    };
+    let search_history = Rc::new(RefCell::new(search_history));
+    let recent_items = Rc::new(RefCell::new(recent_items));
     let readline = Rc::new(RefCell::new(ReadlineEditor::default()));
     let config = Arc::new(config);
     let index = search::empty_index();
@@ -121,7 +129,7 @@ pub(crate) fn build(app: &Application) {
     window.set_hide_on_close(tray_active);
 
     let initial_results =
-        search::recent_search_results(history.borrow().entries(), config.max_recent_searches);
+        search::recent_item_results(recent_items.borrow().entries(), config.max_recent_items);
     let state = Arc::new(RwLock::new(initial_results.clone()));
     render_results(&list, &scroll, &initial_results, "", false, &config.ui);
     if let Some(error) = config_error {
@@ -138,20 +146,15 @@ pub(crate) fn build(app: &Application) {
         let scroll = scroll.clone();
         let response = response.clone();
         let input = input.clone();
-        let history = history.clone();
+        let search_history = search_history.clone();
+        let recent_items = recent_items.clone();
         let window = window.clone();
         Rc::new(move |item: &SearchItem| {
-            if matches!(item.kind, ItemKind::RecentSearch) {
-                input.set_text(&item.target);
-                input.set_position(-1);
-                input.grab_focus();
-                return;
-            }
             if matches!(item.kind, ItemKind::AiPrompt) && item.target.is_empty() {
                 return;
             }
 
-            if let Err(error) = history.borrow_mut().record(&input.text()) {
+            if let Err(error) = search_history.borrow_mut().record(&input.text()) {
                 eprintln!("failed to save recent search: {error:#}");
             }
 
@@ -163,13 +166,21 @@ pub(crate) fn build(app: &Application) {
                 ai::ask(&config.ai, &item.target, &response);
                 return;
             }
-            if let Err(error) = launch(item) {
-                eprintln!("launch failed: {error:#}");
-            } else if tray_active {
-                input.set_text("");
-                window.set_visible(false);
-            } else {
-                app.quit();
+            match launch(item) {
+                Err(error) => eprintln!("launch failed: {error:#}"),
+                Ok(()) => {
+                    if let Some(recent_item) = RecentItem::from_search_item(item) {
+                        if let Err(error) = recent_items.borrow_mut().record(recent_item) {
+                            eprintln!("failed to save recent item: {error:#}");
+                        }
+                    }
+                    if tray_active {
+                        input.set_text("");
+                        window.set_visible(false);
+                    } else {
+                        app.quit();
+                    }
+                }
             }
         })
     };
@@ -182,14 +193,14 @@ pub(crate) fn build(app: &Application) {
         let state = state.clone();
         let config = config.clone();
         let window = window.clone();
-        let history = history.clone();
+        let recent_items = recent_items.clone();
         Rc::new(move |query: &str| {
             let now = Instant::now();
             let query_is_empty = query.trim().is_empty();
             let results = if query_is_empty {
-                search::recent_search_results(
-                    history.borrow().entries(),
-                    config.max_recent_searches,
+                search::recent_item_results(
+                    recent_items.borrow().entries(),
+                    config.max_recent_items,
                 )
             } else {
                 search::search(&index, query, config.max_results)
@@ -223,7 +234,7 @@ pub(crate) fn build(app: &Application) {
         let list = list.clone();
         let state = state.clone();
         let activate = activate.clone();
-        let history = history.clone();
+        let search_history = search_history.clone();
         let readline = readline.clone();
         let window = window.clone();
         let key = EventControllerKey::new();
@@ -233,7 +244,7 @@ pub(crate) fn build(app: &Application) {
                 &input_for_handler,
                 key,
                 modifiers,
-                history.borrow().entries(),
+                search_history.borrow().entries(),
             ) {
                 return glib::Propagation::Stop;
             }
@@ -382,7 +393,6 @@ fn render_results(
     } else {
         for result in results {
             let icon = match result.item.kind {
-                ItemKind::RecentSearch => "↶",
                 ItemKind::Application => "●",
                 ItemKind::Command => ">",
                 ItemKind::File => "□",
@@ -501,7 +511,6 @@ fn selected_item(state: &Arc<RwLock<Vec<SearchResult>>>, list: &ListBox) -> Opti
 
 fn launch(item: &SearchItem) -> Result<()> {
     match item.kind {
-        ItemKind::RecentSearch => {}
         ItemKind::Application => {
             if item.target.trim().is_empty() {
                 anyhow::bail!("empty desktop Exec command");

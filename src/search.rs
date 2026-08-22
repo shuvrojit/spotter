@@ -1,6 +1,7 @@
 use crate::config::Config;
 use anyhow::{Context, Result};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     env,
@@ -14,15 +15,48 @@ use std::{
 };
 use walkdir::{DirEntry, WalkDir};
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum ItemKind {
-    RecentSearch,
     Application,
     Command,
     File,
     Directory,
     WebSearch,
     AiPrompt,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct RecentItem {
+    pub(crate) title: String,
+    pub(crate) subtitle: String,
+    pub(crate) target: String,
+    pub(crate) kind: ItemKind,
+    pub(crate) desktop_icon: Option<String>,
+}
+
+impl RecentItem {
+    pub(crate) fn from_search_item(item: &SearchItem) -> Option<Self> {
+        if !matches!(item.kind, ItemKind::Application | ItemKind::WebSearch) {
+            return None;
+        }
+
+        Some(Self {
+            title: item.title.clone(),
+            subtitle: if matches!(item.kind, ItemKind::WebSearch) {
+                "Web search · Open in default browser".to_string()
+            } else {
+                item.subtitle.clone()
+            },
+            target: item.target.clone(),
+            kind: item.kind.clone(),
+            desktop_icon: item.desktop_icon.clone(),
+        })
+    }
+
+    pub(crate) fn is_supported(&self) -> bool {
+        matches!(self.kind, ItemKind::Application | ItemKind::WebSearch)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -143,18 +177,18 @@ pub(crate) fn search(index: &SharedIndex, query: &str, max_results: usize) -> Ve
     results
 }
 
-pub(crate) fn recent_search_results(entries: &[String], max_results: usize) -> Vec<SearchResult> {
+pub(crate) fn recent_item_results(entries: &[RecentItem], max_results: usize) -> Vec<SearchResult> {
     entries
         .iter()
         .take(max_results)
-        .map(|query| SearchResult {
+        .map(|entry| SearchResult {
             item: SearchItem {
-                title: query.clone(),
-                subtitle: "Recent search · Press Enter to search again".to_string(),
-                target: query.clone(),
-                kind: ItemKind::RecentSearch,
-                tokens: query.to_lowercase(),
-                desktop_icon: None,
+                title: entry.title.clone(),
+                subtitle: entry.subtitle.clone(),
+                target: entry.target.clone(),
+                kind: entry.kind.clone(),
+                tokens: entry.title.to_lowercase(),
+                desktop_icon: entry.desktop_icon.clone(),
             },
             score: 0,
         })
@@ -232,7 +266,6 @@ fn match_score(tokens: &str, query: &str, terms: &[&str]) -> Option<i64> {
 
 fn kind_boost(kind: &ItemKind) -> i64 {
     match kind {
-        ItemKind::RecentSearch => 0,
         ItemKind::Application => 3_000,
         ItemKind::Command => 1_500,
         ItemKind::Directory => 800,
@@ -485,14 +518,25 @@ mod tests {
     }
 
     #[test]
-    fn recent_search_results_preserve_newest_first_order() {
-        let entries = vec!["terminal".to_string(), "firefox".to_string()];
-        let results = recent_search_results(&entries, 1);
+    fn recent_item_results_preserve_kind_and_order() {
+        let entries = vec![
+            RecentItem {
+                title: "Firefox".to_string(),
+                subtitle: "Web Browser".to_string(),
+                target: "firefox".to_string(),
+                kind: ItemKind::Application,
+                desktop_icon: Some("firefox".to_string()),
+            },
+            RecentItem::from_search_item(&web_search_item("rust language")).unwrap(),
+        ];
+        let results = recent_item_results(&entries, 2);
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].item.title, "terminal");
-        assert_eq!(results[0].item.target, "terminal");
-        assert!(matches!(results[0].item.kind, ItemKind::RecentSearch));
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].item.title, "Firefox");
+        assert_eq!(results[0].item.desktop_icon.as_deref(), Some("firefox"));
+        assert!(matches!(results[0].item.kind, ItemKind::Application));
+        assert!(matches!(results[1].item.kind, ItemKind::WebSearch));
+        assert!(results[1].item.subtitle.starts_with("Web search ·"));
     }
 
     #[test]

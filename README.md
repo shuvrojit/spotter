@@ -10,8 +10,8 @@ A fast application launcher for Linux, written in Rust.
 - Optionally searches executable commands from `PATH`.
 - Indexes configured home folders and supports absolute paths.
 - Parallel fuzzy search with a small bounded result list for responsive typing.
-- Persists recent searches and shows them newest-first when the input is empty.
-- Supports GNU Readline-style input editing and recent-history navigation.
+- Shows recently launched apps and web searches when the input is empty.
+- Persists query history for GNU Readline-style editing and navigation.
 - Optionally stays available through a search-style system tray icon.
 - Opens apps, shell commands, files, and directories with `Enter`.
 - Loads configuration from `~/.config/spotter/config.toml`.
@@ -84,10 +84,14 @@ Invalid TOML cannot be applied. Spotter shows the parse error in the launcher
 and uses defaults until the file is corrected. Restart Spotter after editing
 configuration values.
 
-Set `max_recent_searches` to control how many queries are retained, or set it
-to `0` to disable search history. History is stored locally at
-`~/.local/share/spotter/recent-searches.json` by default. Selecting a recent
-query restores it so you can review the results before launching anything.
+Set `max_recent_items` to control how many launched apps and web searches are
+shown when the input is empty, or set it to `0` to disable the recent list.
+Web entries are explicitly tagged as web searches. The list is stored at
+`~/.local/share/spotter/recent-items.json`.
+
+`max_recent_searches` separately controls the query history used by Readline
+navigation such as `Ctrl+P/N`. Set it to `0` to disable query history. Queries
+are stored at `~/.local/share/spotter/recent-searches.json`.
 
 Set `include_path_binaries = true` to index executable files found in `PATH`.
 It defaults to `false`, so command binaries are excluded unless explicitly

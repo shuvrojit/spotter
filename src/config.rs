@@ -7,6 +7,7 @@ const CONFIG_DIR_NAME: &str = "spotter";
 const CONFIG_FILE_NAME: &str = "config.toml";
 const DEFAULT_MAX_RESULTS: usize = 9;
 const DEFAULT_MAX_RECENT_SEARCHES: usize = 8;
+const DEFAULT_MAX_RECENT_ITEMS: usize = 8;
 const DEFAULT_MAX_RESULT_HEIGHT: i32 = 420;
 const DEFAULT_MAX_INDEXED_ITEMS: usize = 60_000;
 const DEFAULT_INDEX_DEPTH: usize = 5;
@@ -32,6 +33,8 @@ pub(crate) struct Config {
     pub(crate) max_results: usize,
     #[serde(default = "default_max_recent_searches")]
     pub(crate) max_recent_searches: usize,
+    #[serde(default = "default_max_recent_items")]
+    pub(crate) max_recent_items: usize,
     #[serde(default = "default_max_result_height")]
     max_result_height: i32,
     #[serde(default = "default_max_indexed_items")]
@@ -57,6 +60,7 @@ impl Default for Config {
         Self {
             max_results: default_max_results(),
             max_recent_searches: default_max_recent_searches(),
+            max_recent_items: default_max_recent_items(),
             max_result_height: default_max_result_height(),
             max_indexed_items: default_max_indexed_items(),
             index_depth: default_index_depth(),
@@ -298,6 +302,7 @@ impl Config {
             self.max_results = DEFAULT_MAX_RESULTS;
         }
         self.max_recent_searches = self.max_recent_searches.min(50);
+        self.max_recent_items = self.max_recent_items.min(50);
         if self.max_result_height < 120 {
             self.max_result_height = 120;
         }
@@ -385,6 +390,10 @@ fn default_max_results() -> usize {
 
 fn default_max_recent_searches() -> usize {
     DEFAULT_MAX_RECENT_SEARCHES
+}
+
+fn default_max_recent_items() -> usize {
+    DEFAULT_MAX_RECENT_ITEMS
 }
 
 fn default_max_result_height() -> i32 {
@@ -529,6 +538,7 @@ mod tests {
         assert_eq!(config.ui.window_width, 720);
         assert_eq!(config.ui.search_height, 54);
         assert_eq!(config.max_recent_searches, 8);
+        assert_eq!(config.max_recent_items, 8);
         assert!(!config.include_path_binaries);
         assert!(!config.system_tray);
     }
@@ -562,6 +572,20 @@ mod tests {
         config.max_recent_searches = 0;
         config.sanitize();
         assert_eq!(config.max_recent_searches, 0);
+    }
+
+    #[test]
+    fn recent_item_limit_can_be_disabled_and_is_capped() {
+        let mut config = Config {
+            max_recent_items: 51,
+            ..Config::default()
+        };
+        config.sanitize();
+        assert_eq!(config.max_recent_items, 50);
+
+        config.max_recent_items = 0;
+        config.sanitize();
+        assert_eq!(config.max_recent_items, 0);
     }
 
     #[test]
