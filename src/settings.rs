@@ -94,9 +94,15 @@ impl Controls {
         position.set_hexpand(true);
 
         let index_dirs = TextView::new();
-        index_dirs.buffer().set_text(&config.index_dirs.join("\n"));
+        let index_dirs_buffer = index_dirs.buffer();
+        index_dirs_buffer.set_text(&config.index_dirs.join("\n"));
+        index_dirs_buffer.place_cursor(&index_dirs_buffer.start_iter());
         index_dirs.set_monospace(true);
         index_dirs.set_wrap_mode(gtk::WrapMode::None);
+        index_dirs.set_left_margin(8);
+        index_dirs.set_right_margin(8);
+        index_dirs.set_top_margin(8);
+        index_dirs.set_bottom_margin(8);
 
         let ai_api_key = PasswordEntry::new();
         ai_api_key.set_text(&config.ai.api_key);
@@ -218,14 +224,15 @@ impl Controls {
         }
     }
 
-    fn notebook(&self) -> Notebook {
+    fn notebook(&self) -> (Notebook, ScrolledWindow) {
         let notebook = Notebook::new();
         notebook.set_scrollable(true);
-        notebook.append_page(&self.general_page(), Some(&Label::new(Some("General"))));
+        let general_page = self.general_page();
+        notebook.append_page(&general_page, Some(&Label::new(Some("General"))));
         notebook.append_page(&self.interface_page(), Some(&Label::new(Some("Interface"))));
         notebook.append_page(&self.colors_page(), Some(&Label::new(Some("Colors"))));
         notebook.append_page(&self.ai_page(), Some(&Label::new(Some("AI"))));
-        notebook
+        (notebook, general_page)
     }
 
     fn general_page(&self) -> ScrolledWindow {
@@ -297,6 +304,8 @@ impl Controls {
 
         let dirs = ScrolledWindow::builder()
             .min_content_height(150)
+            .min_content_width(220)
+            .has_frame(true)
             .hscrollbar_policy(gtk::PolicyType::Automatic)
             .vscrollbar_policy(gtk::PolicyType::Automatic)
             .child(&self.index_dirs)
@@ -601,7 +610,7 @@ pub(crate) fn present(app: &Application, parent: &ApplicationWindow) {
     note.set_wrap(true);
     root.append(&note);
 
-    let notebook = controls.notebook();
+    let (notebook, general_page) = controls.notebook();
     notebook.set_vexpand(true);
     root.append(&notebook);
 
@@ -633,7 +642,11 @@ pub(crate) fn present(app: &Application, parent: &ApplicationWindow) {
     }
 
     window.set_child(Some(&root));
+    gtk::prelude::GtkWindowExt::set_focus(&window, Some(&controls.max_results));
     window.present();
+
+    let adjustment = general_page.vadjustment();
+    gtk::glib::idle_add_local_once(move || adjustment.set_value(adjustment.lower()));
 }
 
 fn spin(value: f64, min: f64, max: f64, step: f64) -> SpinButton {
