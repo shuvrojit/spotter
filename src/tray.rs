@@ -9,6 +9,7 @@ const MATERIAL_ICON_SIZES: [i32; 4] = [16, 22, 32, 48];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Event {
     Open,
+    Toggle,
     Settings,
     Quit,
 }
@@ -49,7 +50,7 @@ impl Tray for SpotterTray {
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
-        self.send(Event::Open);
+        self.send(Event::Toggle);
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
@@ -159,6 +160,12 @@ mod tests {
 
         tray.activate(0, 0);
 
+        assert_eq!(receiver.try_recv().unwrap(), Event::Toggle);
+        let MenuItem::Standard(open) = tray.menu().remove(0) else {
+            panic!("Open should be a standard tray menu item");
+        };
+        assert_eq!(open.label, "Open Spotter");
+        (open.activate)(&mut tray);
         assert_eq!(receiver.try_recv().unwrap(), Event::Open);
         let mut menu = tray.menu();
         let MenuItem::Standard(settings) = menu.remove(1) else {

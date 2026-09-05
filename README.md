@@ -91,7 +91,8 @@ to edit every configuration value with native controls. The General,
 Interface, Colors, and AI tabs provide switches, number controls, a position
 selector, directory editor, color pickers, and text fields. Choose **Save** and
 restart Spotter to apply the changes. The configuration file is written with
-user-only permissions because it can contain an API key.
+user-only permissions because it can contain an API key. Setting rows
+automatically stack when the window is narrowed.
 
 Set `max_recent_items` to control how many launched apps and web searches are
 shown when the input is empty, or set it to `0` to disable the recent list.
@@ -107,23 +108,38 @@ It defaults to `false`, so command binaries are excluded unless explicitly
 enabled.
 
 Set `system_tray = true` to keep Spotter running after its window is hidden.
-Clicking the search icon presents the launcher again; its context menu also
-offers Open, Settings, and Quit actions. A StatusNotifierItem-compatible tray
-host is required.
+Clicking the search icon toggles the launcher; its context menu also offers
+Open, Settings, and Quit actions. Open always presents the launcher. Hiding it
+keeps the tray icon and search index alive. A StatusNotifierItem-compatible
+tray host is required.
 
 ## Global Shortcut
 
 On Linux, global shortcuts are desktop-environment specific, especially under Wayland. Bind your preferred shortcut to:
 
 ```sh
-spotter
+spotter --toggle
 ```
 
 Examples:
 
 - GNOME: Settings -> Keyboard -> View and Customize Shortcuts -> Custom Shortcuts.
 - KDE Plasma: System Settings -> Shortcuts -> Custom Shortcuts.
-- i3/sway: bind a key to `exec spotter`.
+- i3/sway: bind a key to `exec spotter --toggle`.
+
+For an existing Sway `$menu` binding, use:
+
+```sway
+set $menu spotter --toggle
+bindsym $mod+d exec $menu
+```
+
+Replace `pkill spotter || spotter`: `pkill` terminates the entire application,
+including the tray, even when the launcher is already hidden. `--toggle`
+starts Spotter when needed, then shows or hides the launcher in the existing
+process. Settings windows are unaffected. Without tray mode, hiding the
+launcher closes it normally. Running `spotter` without options always opens
+or focuses the launcher.
 
 ## Notes
 

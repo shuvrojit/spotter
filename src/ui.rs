@@ -8,9 +8,9 @@ use crate::{
     settings, tray, PRODUCT_NAME,
 };
 use anyhow::Result;
-use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
+use gtk::{gdk, gio};
 use gtk::{
     Align, Application, ApplicationWindow, Box as GtkBox, EventControllerKey, Label, ListBox,
     ListBoxRow, Orientation, ScrolledWindow, SearchEntry,
@@ -24,7 +24,24 @@ use std::{
     time::Instant,
 };
 
-pub(crate) fn build(app: &Application) {
+pub(crate) fn activate(app: &Application, toggle: bool) {
+    let launcher = app
+        .windows()
+        .into_iter()
+        .find(|window| window.widget_name() == "launcher-window")
+        .and_then(|window| window.downcast::<ApplicationWindow>().ok());
+    if let Some(window) = launcher {
+        gio::prelude::ActionGroupExt::activate_action(
+            &window,
+            if toggle { "toggle" } else { "show" },
+            None,
+        );
+    } else {
+        build(app);
+    }
+}
+
+fn build(app: &Application) {
     let (config, config_error) = match config::load() {
         Ok(config) => (config, None),
         Err(error) => {
@@ -311,7 +328,18 @@ pub(crate) fn build(app: &Application) {
         window.add_controller(key);
     }
 
-    platform::present(&window);
+    for (name, toggle) in [("show", false), ("toggle", true)] {
+        let action = gio::SimpleAction::new(name, None);
+        let weak_window = window.downgrade();
+        let weak_input = input.downgrade();
+        action.connect_activate(move |_, _| {
+            if let (Some(window), Some(input)) = (weak_window.upgrade(), weak_input.upgrade()) {
+                update_launcher_visibility(&window, &input, toggle);
+            }
+        });
+        window.add_action(&action);
+    }
+    update_launcher_visibility(&window, &input, false);
     if let Some((service, events)) = tray_runtime {
         listen_for_tray_events(app, &window, &input, service, events);
     }
@@ -331,6 +359,17 @@ pub(crate) fn build(app: &Application) {
     input.grab_focus();
 }
 
+fn update_launcher_visibility(window: &ApplicationWindow, input: &SearchEntry, toggle: bool) {
+    if toggle && window.is_visible() {
+        // hide-on-close keeps a tray instance and its index alive. Without a
+        // tray, closing the last window retains the normal exit behavior.
+        window.close();
+    } else {
+        platform::present(window);
+        input.grab_focus();
+    }
+}
+
 fn listen_for_tray_events(
     app: &Application,
     window: &ApplicationWindow,
@@ -347,10 +386,8 @@ fn listen_for_tray_events(
         let _service = service;
         while let Ok(event) = events.recv().await {
             match event {
-                tray::Event::Open => {
-                    platform::present(&window);
-                    input.grab_focus();
-                }
+                tray::Event::Open => update_launcher_visibility(&window, &input, false),
+                tray::Event::Toggle => update_launcher_visibility(&window, &input, true),
                 tray::Event::Settings => settings::present(&app, &window),
                 tray::Event::Quit => {
                     app.quit();

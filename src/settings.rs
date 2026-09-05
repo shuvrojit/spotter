@@ -3,8 +3,8 @@ use gtk::gdk;
 use gtk::prelude::*;
 use gtk::{
     Align, Application, ApplicationWindow, Box as GtkBox, Button, ColorDialog, ColorDialogButton,
-    DropDown, Entry, Grid, Label, Notebook, Orientation, PasswordEntry, ScrolledWindow, SpinButton,
-    Switch, TextView,
+    DropDown, Entry, FlowBox, Label, Notebook, Orientation, PasswordEntry, ScrolledWindow,
+    SpinButton, Switch, TextView,
 };
 
 const SETTINGS_TITLE: &str = "Spotter Settings";
@@ -236,7 +236,7 @@ impl Controls {
     }
 
     fn general_page(&self) -> ScrolledWindow {
-        let grid = settings_grid();
+        let grid = settings_list();
         let mut row = 0;
         add_row(
             &grid,
@@ -321,7 +321,7 @@ impl Controls {
     }
 
     fn interface_page(&self) -> ScrolledWindow {
-        let grid = settings_grid();
+        let grid = settings_list();
         let mut row = 0;
         add_row(
             &grid,
@@ -453,7 +453,7 @@ impl Controls {
     }
 
     fn colors_page(&self) -> ScrolledWindow {
-        let grid = settings_grid();
+        let grid = settings_list();
         let mut row = 0;
         add_row(
             &grid,
@@ -536,7 +536,7 @@ impl Controls {
     }
 
     fn ai_page(&self) -> ScrolledWindow {
-        let grid = settings_grid();
+        let grid = settings_list();
         let mut row = 0;
         add_row(
             &grid,
@@ -588,8 +588,9 @@ pub(crate) fn present(app: &Application, parent: &ApplicationWindow) {
         .title(SETTINGS_TITLE)
         .transient_for(parent)
         .modal(false)
-        .default_width(780)
-        .default_height(720)
+        .resizable(true)
+        .default_width(680)
+        .default_height(640)
         .build();
 
     let root = GtkBox::new(Orientation::Vertical, 12);
@@ -600,13 +601,18 @@ pub(crate) fn present(app: &Application, parent: &ApplicationWindow) {
 
     let heading = Label::new(Some("Spotter Settings"));
     heading.add_css_class("title-1");
-    heading.set_halign(Align::Start);
+    heading.set_halign(Align::Fill);
+    heading.set_hexpand(true);
+    heading.set_xalign(0.0);
+    heading.set_wrap(true);
     root.append(&heading);
 
     let note = Label::new(Some(
         "Changes are saved to config.toml and take effect after restarting Spotter.",
     ));
-    note.set_halign(Align::Start);
+    note.set_halign(Align::Fill);
+    note.set_hexpand(true);
+    note.set_xalign(0.0);
     note.set_wrap(true);
     root.append(&note);
 
@@ -615,17 +621,21 @@ pub(crate) fn present(app: &Application, parent: &ApplicationWindow) {
     root.append(&notebook);
 
     let status = Label::new(load_error.as_deref());
-    status.set_halign(Align::Start);
+    status.set_halign(Align::Fill);
     status.set_hexpand(true);
+    status.set_xalign(0.0);
     status.set_wrap(true);
 
     let close = Button::with_label("Close");
     let save = Button::with_label("Save");
     save.add_css_class("suggested-action");
-    let footer = GtkBox::new(Orientation::Horizontal, 8);
+    let footer = GtkBox::new(Orientation::Vertical, 8);
+    let actions = GtkBox::new(Orientation::Horizontal, 8);
+    actions.set_halign(Align::End);
     footer.append(&status);
-    footer.append(&close);
-    footer.append(&save);
+    actions.append(&close);
+    actions.append(&save);
+    footer.append(&actions);
     root.append(&footer);
 
     {
@@ -682,19 +692,17 @@ fn color_value(button: &ColorDialogButton) -> String {
     button.rgba().to_string()
 }
 
-fn settings_grid() -> Grid {
-    Grid::builder()
-        .column_spacing(24)
-        .row_spacing(14)
-        .margin_top(18)
-        .margin_bottom(18)
-        .margin_start(18)
-        .margin_end(18)
-        .build()
+fn settings_list() -> GtkBox {
+    let list = GtkBox::new(Orientation::Vertical, 14);
+    list.set_margin_top(18);
+    list.set_margin_bottom(18);
+    list.set_margin_start(18);
+    list.set_margin_end(18);
+    list
 }
 
 fn add_row(
-    grid: &Grid,
+    list: &GtkBox,
     row: &mut i32,
     title: &str,
     description: &str,
@@ -702,6 +710,7 @@ fn add_row(
 ) {
     let labels = GtkBox::new(Orientation::Vertical, 2);
     labels.set_hexpand(true);
+    labels.set_size_request(240, -1);
     let title = Label::new(Some(title));
     title.set_halign(Align::Start);
     title.set_xalign(0.0);
@@ -710,18 +719,31 @@ fn add_row(
     description.set_halign(Align::Start);
     description.set_xalign(0.0);
     description.set_wrap(true);
+    description.set_max_width_chars(38);
     labels.append(&title);
     labels.append(&description);
 
-    grid.attach(&labels, 0, *row, 1, 1);
-    grid.attach(control, 1, *row, 1, 1);
+    control.set_hexpand(true);
+    let responsive_row = FlowBox::builder()
+        .orientation(Orientation::Horizontal)
+        .column_spacing(24)
+        .row_spacing(8)
+        .homogeneous(true)
+        .min_children_per_line(1)
+        .max_children_per_line(2)
+        .selection_mode(gtk::SelectionMode::None)
+        .build();
+    responsive_row.set_hexpand(true);
+    responsive_row.append(&labels);
+    responsive_row.append(control);
+    list.append(&responsive_row);
     *row += 1;
 }
 
-fn settings_page(grid: &Grid) -> ScrolledWindow {
+fn settings_page(list: &GtkBox) -> ScrolledWindow {
     ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
-        .child(grid)
+        .child(list)
         .build()
 }

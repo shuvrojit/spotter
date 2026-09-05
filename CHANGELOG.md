@@ -8,11 +8,13 @@ All notable changes to Spotter are documented in this file.
 
 - Optional StatusNotifierItem system tray mode with a search icon, click-to-open
   behavior, and Open/Settings/Quit menu actions.
-- A floating, mouse-driven settings window for editing and privately saving all
-  General, Interface, Colors, and AI configuration values.
+- A floating, responsive, mouse-driven settings window for editing and
+  privately saving all General, Interface, Colors, and AI configuration values.
 - An `include_path_binaries` option for indexing executable files from `PATH`,
   disabled by default.
 - Single-click mouse activation for launcher result rows.
+- A `--toggle` command for launcher shortcuts that cooperates with system tray
+  mode and forwards show/hide requests to the running instance.
 
 ### Fixed
 
@@ -21,6 +23,8 @@ All notable changes to Spotter are documented in this file.
 
 ### Changed
 
+- Clicking the tray icon toggles the launcher; the Open menu action continues
+  to always show it.
 - Show recently launched applications instead of query strings when the input
   is empty, while retaining query history for Readline navigation.
 - Keep launched web fallbacks in the recent list with an explicit web-search
